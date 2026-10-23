@@ -246,6 +246,45 @@ public class SmokeTest {
     }
 
     @Test
+    public void standingBodyHoldsThePose() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        step(40); // settle
+        Fighter cpu = game.debugFighter(1);
+        assertTrue("the live fighter should be drawn from a simulated body",
+                cpu.body != null);
+        assertTrue("at rest the body must track the animated pose, was "
+                + game.debugPoseError(1), game.debugPoseError(1) < 6f);
+        shot("21-standing-body");
+    }
+
+    @Test
+    public void everyHitFloppsThenRecovers() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        step(40);
+        Fighter cpu = game.debugFighter(1);
+
+        // a light jab must visibly disturb the body...
+        cpu.damage(8f, 250f, -90f, false);
+        float peak = 0f;
+        for (int i = 0; i < 8; i++) {
+            game.tick(1f / 60f);
+            peak = Math.max(peak, game.debugPoseError(1));
+        }
+        assertTrue("a jab should make the body flop, peak was " + peak, peak > 12f);
+        shot("22-hit-flop");
+
+        // ...and the muscle must pull it back onto the pose
+        step(40);
+        assertTrue("the body should recover to its pose, was " + game.debugPoseError(1),
+                game.debugPoseError(1) < 6f);
+        assertTrue("limp must decay to zero", game.debugLimp(1) < 0.01f);
+    }
+
+    @Test
     public void heavyHitRagdollsThenAutoRecovers() {
         boot();
         game.debugStartMatch(0, 0);
@@ -339,7 +378,7 @@ public class SmokeTest {
                 game.tick(1f / 60f);
                 game.draw(canvas);
             }
-            Ragdoll body = game.debugFighter(1).ragdoll;
+            Ragdoll body = game.debugFighter(1).body;
             if (body == null) {
                 continue; // settled, faded out or dropped into a pit: all fine
             }

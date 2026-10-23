@@ -1148,7 +1148,7 @@ public final class Game {
             Fighter f = fighters[i];
             if (f.justDown && !f.dead) {
                 f.justDown = false;
-                f.ragdoll = new Ragdoll(f);
+                f.limp = 1f; // the body it already has goes fully limp
                 fx.dust(f.x, f.y + Fighter.FEET, 0x77FFFFFF, 7, 30f);
                 fx.ring(f.x, f.y + Fighter.FEET - 10f, 0xFFFFE38A, 24, 0.3f);
                 fx.floatText(f.x, f.y - 70f, "DOWN!", 0xFFFFC46B);
@@ -1158,11 +1158,9 @@ public final class Game {
             }
             if (f.justDied) {
                 f.justDied = false;
-                if (f.ragdoll != null) {
-                    // killed while already ragdolled: keep the pose, don't teleport
-                    f.ragdoll.reborn();
-                } else {
-                    f.ragdoll = new Ragdoll(f);
+                if (f.body != null) {
+                    // keep the pose it died in, don't teleport it
+                    f.body.reborn();
                 }
                 fx.dust(f.x, f.y + Fighter.FEET, 0x66FFFFFF, 6, 26f);
             }
@@ -1172,9 +1170,9 @@ public final class Game {
     private void updateRagdolls(float dt) {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            Ragdoll body = f.ragdoll;
-            if (body == null) {
-                continue;
+            Ragdoll body = f.body;
+            if (body == null || !f.ragdolled()) {
+                continue; // standing bodies are stepped by Fighter.update
             }
             body.update(dt, arena);
 
@@ -1188,7 +1186,7 @@ public final class Game {
                     recoverFromRagdoll(f);
                 }
             } else if (body.gone()) {
-                f.ragdoll = null;
+                f.body = null; // corpse has faded out
             }
         }
     }
@@ -1198,12 +1196,11 @@ public final class Game {
         if (f.dead) {
             return;
         }
-        Ragdoll body = f.ragdoll;
+        Ragdoll body = f.body;
         float hx = body != null ? body.x[Ragdoll.HIPS] : f.x;
         float hy = body != null ? body.y[Ragdoll.HIPS] : f.y;
 
         if (hy > arena.bounds.bottom + 60f) {
-            f.ragdoll = null;
             f.down = false;
             f.kill(0); // fell out of the world while prone
             return;
@@ -1233,11 +1230,11 @@ public final class Game {
 
     /** Camera focus: follows the corpse's hips once the fighter is a ragdoll. */
     private float focusX(Fighter f) {
-        return f.ragdoll != null ? f.ragdoll.x[Ragdoll.HIPS] : f.x;
+        return f.body != null ? f.body.x[Ragdoll.HIPS] : f.x;
     }
 
     private float focusY(Fighter f) {
-        return f.ragdoll != null ? f.ragdoll.y[Ragdoll.HIPS] : f.y;
+        return f.body != null ? f.body.y[Ragdoll.HIPS] : f.y;
     }
 
     private void updateCamera(float dt) {
@@ -1358,8 +1355,10 @@ public final class Game {
         }
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            if (f.ragdoll != null) {
-                f.ragdoll.draw(g);
+            if (f.ragdolled()) {
+                if (f.body != null) {
+                    f.body.draw(g);
+                }
                 continue;
             }
             g.alpha(40);
@@ -2065,14 +2064,23 @@ public final class Game {
         return fighters[i].poise;
     }
 
+    /** Fighters whose physics body is in charge (knocked down or dead). */
     int debugRagdollCount() {
         int n = 0;
         for (int i = 0; i < 2; i++) {
-            if (fighters[i].ragdoll != null) {
+            if (fighters[i].ragdolled()) {
                 n++;
             }
         }
         return n;
+    }
+
+    float debugLimp(int i) {
+        return fighters[i].limp;
+    }
+
+    float debugPoseError(int i) {
+        return fighters[i].poseError();
     }
 
     // --------------------------------------------------------------- helpers

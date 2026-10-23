@@ -11,6 +11,8 @@ public final class Fighter {
     public static final float POISE_MAX = 46f;
     private static final float POISE_REGEN = 14f;
     private static final float POISE_HOLD = 1.1f;
+    /** How fast a hit reaction wears off (per second). */
+    private static final float LIMP_RECOVER = 2.2f;
     public static final float FEET = 30f;
     public static final float HEAD = 30f;
     public static final float HEIGHT = 96f;
@@ -50,9 +52,32 @@ public final class Fighter {
     public float walkPhase;
 
     public boolean dead;
+    /** True while the physics body, not the arcade pose, is in charge. */
+    public boolean ragdolled() {
+        return dead || down;
+    }
+
+    /** Max distance between a joint and the pose it is meant to hold (px). */
+    float poseError() {
+        if (body == null) {
+            return -1f;
+        }
+        float worst = 0f;
+        for (int i = 0; i < Ragdoll.N; i++) {
+            worst = Math.max(worst, Math.abs(body.x[i] - poseX[i]) + Math.abs(body.y[i] - poseY[i]));
+        }
+        return worst;
+    }
+
     public float deadT;
-    /** Jointed body: the corpse after a KO, or the knocked-down body while alive. */
-    public Ragdoll ragdoll;
+    /**
+     * The jointed body. It exists for the whole life of the fighter: while
+     * standing, muscle pulls it onto the animated pose; when limp, hit or dead,
+     * physics takes over. This is what makes every hit flop instead of only KOs.
+     */
+    public Ragdoll body;
+    /** 0..1 floppiness, spiked by hits and decaying back to 0. */
+    public float limp;
     /** Knocked down but alive: a ragdoll drives the body until it recovers. */
     public boolean down;
     public float downT;
@@ -67,6 +92,8 @@ public final class Fighter {
     public boolean justDied;
     /** Head lag on hits: a small spring that makes the neck look jointed. */
     public float wobX, wobY;
+    private final float[] poseX = new float[Ragdoll.N];
+    private final float[] poseY = new float[Ragdoll.N];
     private float wobVx, wobVy;
 
     public int color = 0xFFF2F2F2;
@@ -155,6 +182,12 @@ public final class Fighter {
         hurtT = 0.22f;
         flashT = 0.16f;
 
+        // every hit knocks the body out of its pose for a moment
+        limp = Math.min(1f, limp + 0.55f + dmg * 0.02f);
+        if (body != null) {
+            body.kick(kx * 1.2f, ky * 1.2f);
+        }
+
         // Poise: heavy weapons put you on the floor at once, light ones after a
         // couple of clean hits. Already-down fighters just take the damage.
         if (!down) {
@@ -180,6 +213,7 @@ public final class Fighter {
         down = true;
         downT = 0f;
         justDown = true;
+        limp = 1f;
         attacking = false;
         attackQueued = false;
         jumpQueued = false;
@@ -208,6 +242,11 @@ public final class Fighter {
         attacking = false;
         attackQueued = false;
         jumpQueued = false;
+        limp = 0f;
+        poseNow();
+        if (body != null) {
+            body.teleport(poseX, poseY);
+        }
     }
 
     public void stun(float t) {
@@ -221,7 +260,8 @@ public final class Fighter {
         dead = true;
         health = 0f;
         attacking = false;
-        down = false; // no recovery once dead; the ragdoll is now a corpse
+        down = false; // no recovery once dead; the body is now a corpse
+        limp = 1f;
         vy = -280f;
         vx = kx + facing * -90f;
         justDied = true;
@@ -268,6 +308,9 @@ public final class Fighter {
         }
         if (iframes > 0f) {
             iframes -= dt;
+        }
+        if (limp > 0f) {
+            limp = Math.max(0f, limp - LIMP_RECOVER * dt);
         }
         if (!down && poise > 0f) {
             if (poiseT > 0f) {
@@ -405,6 +448,91 @@ public final class Fighter {
             x = arena.bounds.right - HALF_W;
             vx = Math.min(0, vx);
         }
+
+        updateBody(dt, arena);
+    }
+
+    /** Steps the active ragdoll for a standing fighter: physics + pose muscle. */
+    private void updateBody(float dt, Maps.Arena arena) {
+        if (body == null) {
+            body = new Ragdoll(this);
+        }
+        poseNow();
+        // muscle: 1 when composed, near 0 when freshly smashed. Squaring makes
+        // light hits flinch and heavy ones genuinely flop.
+        float muscle = (1f - limp) * (1f - limp);
+        body.update(dt, arena, poseX, poseY, muscle, 0.4f);
+    }
+
+    /**
+     * Fills poseX/poseY with the world-space skeleton the arcade animation wants
+     * this frame - the same geometry drawLocal() renders, so the body and the
+     * old pose line up when muscle is at full strength.
+     */
+    private void poseNow() {
+        float squash = (crouch && onGround && !dead) ? 0.72f : 1f;
+        float headR = 13f;
+        float neckY = -24f;
+        float hipY = 12f;
+        float shoulderY = neckY + 8f;
+        float armLen = 22f;
+
+        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 12f : 6f);
+        float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 12f : 6f);
+        if (!onGround && !dead) {
+            legSwing = -10f;
+            legSwing2 = 8f;
+        }
+
+        float handXr;
+        float handYr;
+        if (shieldOn) {
+            handXr = facing * 16f;
+            handYr = shoulderY + 4f;
+        } else if (attacking) {
+            float t = 1f - Math.max(0f, attackT) / attackDur;
+            float swing = (float) Math.sin(t * Math.PI) * (float) Math.PI * 0.9f;
+            handXr = facing * (armLen * (float) Math.cos(swing * 0.9f));
+            handYr = shoulderY + armLen * (float) Math.sin(swing * 0.9f) * 0.9f;
+        } else {
+            handXr = facing * 10f;
+            handYr = shoulderY + 20f;
+        }
+
+        float nkX = wobX;
+        float nkY = neckY + wobY;
+
+        pose(Ragdoll.HIPS, 0f, hipY, squash);
+        pose(Ragdoll.CHEST, 0f, shoulderY, squash);
+        pose(Ragdoll.HEAD, nkX, nkY - headR + 4f, squash);
+
+        // back arm and weapon arm, with elbows held half way out
+        arm(Ragdoll.ELBOW_L, Ragdoll.HAND_L, 0f, shoulderY, -facing * 8f, shoulderY + 18f, squash);
+        arm(Ragdoll.ELBOW_R, Ragdoll.HAND_R, 0f, shoulderY, handXr, handYr, squash);
+
+        legPose(Ragdoll.KNEE_L, Ragdoll.FOOT_L, legSwing, 1, hipY, squash);
+        legPose(Ragdoll.KNEE_R, Ragdoll.FOOT_R, legSwing2, -1, hipY, squash);
+    }
+
+    private void pose(int i, float lx, float ly, float squash) {
+        poseX[i] = x + lx;
+        poseY[i] = y + ly * squash;
+    }
+
+    private void arm(int elbow, int hand, float sx, float sy, float hx, float hy, float squash) {
+        float ex = sx + (hx - sx) * 0.55f;
+        float ey = sy + (hy - sy) * 0.55f;
+        pose(hand, hx, hy, squash);
+        pose(elbow, ex, ey, squash);
+    }
+
+    private void legPose(int knee, int foot, float swing, int side, float hipY, float squash) {
+        float hipX = side * HALF_W * 0.34f;
+        float kneeX = hipX + swing * 0.55f + side * 2f;
+        float footX = kneeX + swing * 0.5f;
+        float kneeY = hipY + (FEET - hipY) * 0.52f;
+        pose(knee, kneeX, kneeY, squash);
+        pose(foot, footX, FEET, squash);
     }
 
     /** Set for one frame when the fighter touches down; consumed by Game. */
@@ -459,7 +587,8 @@ public final class Fighter {
         shield = maxShield;
         dead = false;
         deadT = 0;
-        ragdoll = null;
+        body = null;
+        limp = 0f;
         justDied = false;
         down = false;
         downT = 0f;
@@ -491,6 +620,111 @@ public final class Fighter {
     // ---------------------------------------------------------------- drawing
 
     public void draw(Painter g) {
+        if (body == null) {
+            // menus (e.g. the Customize preview) draw a fighter that never ticks,
+            // so it has no simulated body to draw from
+            drawLocal(g);
+            return;
+        }
+        drawBody(g);
+    }
+
+    /**
+     * Draws the stickman straight from the simulated joints, so limbs trail and
+     * flop on a hit instead of following a canned pose.
+     */
+    private void drawBody(Painter g) {
+        float squash = (crouch && onGround && !dead) ? 0.72f : 1f;
+
+        int bodyColor = color;
+        if (flashT > 0) {
+            bodyColor = 0xFFFFFFFF;
+        }
+        boolean ghost = spawnT > 0 && ((int) (spawnT * 20) % 2 == 0);
+        if (ghost) {
+            g.alpha(120);
+        }
+        int outline = luminance(bodyColor) > 0.55f ? 0x66000000 : 0x66FFFFFF;
+
+        float cx = body.x[Ragdoll.CHEST];
+        float cy = body.y[Ragdoll.CHEST];
+        float hx = body.x[Ragdoll.HIPS];
+        float hy = body.y[Ragdoll.HIPS];
+        float nx = body.x[Ragdoll.HEAD];
+        float ny = body.y[Ragdoll.HEAD];
+        boolean composed = limp < 0.45f;
+
+        // legs first, then torso, then arms, then head (same stacking as before)
+        bone(g, hx, hy, body.x[Ragdoll.KNEE_L], body.y[Ragdoll.KNEE_L], 7f, bodyColor, outline);
+        bone(g, body.x[Ragdoll.KNEE_L], body.y[Ragdoll.KNEE_L],
+                body.x[Ragdoll.FOOT_L], body.y[Ragdoll.FOOT_L], 6.4f, bodyColor, outline);
+        bone(g, hx, hy, body.x[Ragdoll.KNEE_R], body.y[Ragdoll.KNEE_R], 7f, bodyColor, outline);
+        bone(g, body.x[Ragdoll.KNEE_R], body.y[Ragdoll.KNEE_R],
+                body.x[Ragdoll.FOOT_R], body.y[Ragdoll.FOOT_R], 6.4f, bodyColor, outline);
+        if (composed) {
+            foot(g, body.x[Ragdoll.FOOT_L], body.y[Ragdoll.FOOT_L], bodyColor, outline);
+            foot(g, body.x[Ragdoll.FOOT_R], body.y[Ragdoll.FOOT_R], bodyColor, outline);
+        }
+
+        bone(g, cx, cy, hx, hy, 7f, bodyColor, outline);
+        bone(g, cx, cy, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L], 6f, bodyColor, outline);
+        bone(g, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L],
+                body.x[Ragdoll.HAND_L], body.y[Ragdoll.HAND_L], 6f, bodyColor, outline);
+        bone(g, cx, cy, body.x[Ragdoll.ELBOW_R], body.y[Ragdoll.ELBOW_R], 6f, bodyColor, outline);
+        bone(g, body.x[Ragdoll.ELBOW_R], body.y[Ragdoll.ELBOW_R],
+                body.x[Ragdoll.HAND_R], body.y[Ragdoll.HAND_R], 6f, bodyColor, outline);
+
+        // head: cheeky eye offset by facing, hair re-anchored on the head joint
+        float headR = 13f;
+        g.circle(nx, ny, headR + 1.8f, outline);
+        g.circle(nx, ny, headR, bodyColor);
+        g.circle(nx + facing * 5f, ny - 2f, 2.4f, 0xFF101018);
+        g.c.save();
+        g.c.translate(nx, ny - (-24f + wobY - headR + 4f) * squash);
+        drawHair(g, bodyColor);
+        g.c.restore();
+
+        drawWeapon(g, body.x[Ragdoll.HAND_R], body.y[Ragdoll.HAND_R]);
+
+        if (shieldOn && shield > 0) {
+            float sx = (cx + hx) * 0.5f;
+            float sy = (cy + hy) * 0.5f;
+            int a = 70 + (int) (50f * (shield / maxShield));
+            g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
+            g.line.setStrokeWidth(3f);
+            g.c.drawCircle(sx, sy, 46f, g.line);
+            g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 34));
+            g.line.setStrokeWidth(11f);
+            g.c.drawCircle(sx, sy, 46f, g.line);
+        }
+
+        if (ghost) {
+            g.alpha(255);
+        }
+        g.reset();
+
+        if (!dead && health < maxHealth) {
+            float w = 44f;
+            float barY = ny - 14f;
+            g.rrect(nx - w / 2, barY, w, 5f, 2.5f, 0x88000000);
+            g.rrect(nx - w / 2, barY, w * (health / maxHealth), 5f, 2.5f,
+                    health > 50 ? 0xFF7BFF9E : (health > 25 ? 0xFFFFD166 : 0xFFFF5D5D));
+        }
+    }
+
+    private void bone(Painter g, float x1, float y1, float x2, float y2, float w,
+                      int body, int outline) {
+        g.stroke(x1, y1, x2, y2, w + 3.4f, outline);
+        g.stroke(x1, y1, x2, y2, w, body);
+    }
+
+    private void foot(Painter g, float fx, float fy, int body, int outline) {
+        g.stroke(fx - 2f, fy, fx + 7f, fy, 8.4f, outline);
+        g.stroke(fx - 2f, fy, fx + 7f, fy, 5f, body);
+    }
+
+    /** The old transform-based pose, kept for fighters that never simulate. */
+    private void drawLocal(Painter g) {
         g.c.save();
         g.c.translate(x, y);
 
@@ -507,9 +741,6 @@ public final class Fighter {
         if (spawnT > 0 && ((int) (spawnT * 20) % 2 == 0)) {
             g.alpha(120);
         }
-
-        // dark figures get a light outline and vice versa, so the stickman reads
-        // on both bright and dark arenas
         int outline = luminance(bodyColor) > 0.55f ? 0x66000000 : 0x66FFFFFF;
 
         float headR = 13f;
@@ -540,7 +771,6 @@ public final class Fighter {
             handYr = shoulderY + 20f;
         }
 
-        // legs: hip -> knee -> foot, with a knee that bends while moving
         float kneeY = hipY + (FEET - hipY) * 0.52f;
         leg(g, hipY, kneeY, legSwing, 1, bodyColor, outline);
         leg(g, hipY, kneeY, legSwing2, -1, bodyColor, outline);
@@ -550,7 +780,6 @@ public final class Fighter {
         limb(g, 0, shoulderY, -facing * 8f, shoulderY + 18f, 6f, bodyColor, outline);
         limb(g, 0, shoulderY, handXr, handYr, 6f, bodyColor, outline);
 
-        // head with outline (offset by the neck spring so hits make it snap)
         g.circle(nkX, nkY - headR + 4f, headR + 1.8f, outline);
         g.circle(nkX, nkY - headR + 4f, headR, bodyColor);
         g.circle(nkX + facing * 5f, nkY - headR + 2f, 2.4f, 0xFF101018);

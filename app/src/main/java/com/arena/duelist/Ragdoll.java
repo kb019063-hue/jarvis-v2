@@ -55,6 +55,8 @@ public final class Ragdoll {
     public float fade = 1f;
     /** True while the body is essentially at rest. */
     public boolean quiet;
+    /** 0..1 blend actually used on the last step; 0 = limp, 1 = muscle holding a pose. */
+    public float muscle;
 
     private float quietT;
 
@@ -81,7 +83,8 @@ public final class Ragdoll {
         setPoint(FOOT_R, cx + 9f, cy + 30f);
 
         for (int i = 0; i < N; i++) {
-            rad[i] = i == HEAD ? 9f : 3.5f;
+            // small foot radii so a standing foot can rest on the surface line
+            rad[i] = i == HEAD ? 9f : ((i == FOOT_L || i == FOOT_R) ? 1f : 3.5f);
             // inherit the killing blow's momentum
             px[i] = x[i] - vx / 60f;
             py[i] = y[i] - vy / 60f;
@@ -104,7 +107,25 @@ public final class Ragdoll {
         return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
+    /** Pure physics (corpse / knocked down). */
     public void update(float dt, Maps.Arena arena) {
+        update(dt, arena, null, null, 0f);
+    }
+
+    /**
+     * Active ragdoll: physics plus a "muscle" that pulls every joint toward a
+     * target pose. At muscle 1 the body tracks the pose exactly; at 0 it is limp.
+     * Bone rest lengths are blended toward the target lengths too, so an extended
+     * sword swing is reachable at high muscle but the limbs keep their physical
+     * length when limp.
+     */
+    public void update(float dt, Maps.Arena arena, float[] tx, float[] ty, float muscle) {
+        update(dt, arena, tx, ty, muscle, 1f);
+    }
+
+    public void update(float dt, Maps.Arena arena, float[] tx, float[] ty, float muscle,
+                       float gravityScale) {
+        this.muscle = (tx == null) ? 0f : Math.max(0f, Math.min(1f, muscle));
         if (dt <= 0f) {
             return;
         }
@@ -115,7 +136,9 @@ public final class Ragdoll {
 
         // Verlet integration: previous position carries the velocity
         float damp = 0.993f;
-        float gg = 2000f * dt * dt;
+        // standing bodies get reduced gravity: a 0.3s flinch should not collapse
+        // the fighter to the floor, it should just wobble
+        float gg = 2000f * gravityScale * dt * dt;
         for (int i = 0; i < N; i++) {
             float nx = x[i] + (x[i] - px[i]) * damp;
             float ny = y[i] + (y[i] - py[i]) * damp + gg;
@@ -126,9 +149,51 @@ public final class Ragdoll {
         }
 
         // relax the skeleton, resolving collisions every pass
+        float m = this.muscle;
         for (int it = 0; it < 5; it++) {
             for (int b = 0; b < BONES.length; b++) {
-                solve(BONES[b][0], BONES[b][1], rest[b], STIFF[b]);
+                int a = BONES[b][0];
+                int c = BONES[b][1];
+                float len = rest[b];
+                if (m > 0f) {
+                    float tdx = tx[a] - tx[c];
+                    float tdy = ty[a] - ty[c];
+                    float target = (float) Math.sqrt(tdx * tdx + tdy * tdy);
+                    if (target > 0.01f) {
+                        len = rest[b] + (target - rest[b]) * m;
+                    }
+                }
+                solve(a, c, len, STIFF[b]);
+            }
+            collide(arena);
+        }
+
+        if (m > 0f) {
+            // Muscle is applied once per frame, not per iteration: doing it five
+            // times made the body five times stiffer, which killed the flop.
+            // Positional only - the previous position moves with the joint so the
+            // muscle does not inject velocity and make the body buzz.
+            if (m > 0.85f) {
+                // Fully composed: the animation is kinematic. Snapping avoids the
+                // few pixels of drift the constraint solver leaves in the
+                // over-constrained torso triangle, and costs nothing perceptually
+                // because the eased pull above has already closed most of the gap.
+                for (int i = 0; i < N; i++) {
+                    x[i] = tx[i];
+                    y[i] = ty[i];
+                    px[i] = tx[i];
+                    py[i] = ty[i];
+                }
+            } else {
+                float pull = m * 0.85f;
+                for (int i = 0; i < N; i++) {
+                    float dx = (tx[i] - x[i]) * pull;
+                    float dy = (ty[i] - y[i]) * pull;
+                    x[i] += dx;
+                    y[i] += dy;
+                    px[i] += dx;
+                    py[i] += dy;
+                }
             }
             collide(arena);
         }
@@ -152,6 +217,13 @@ public final class Ragdoll {
         quiet = speed < 0.4f;
         quietT = quiet ? quietT + dt : 0f;
 
+        if (m > 0f) {
+            // a standing body never ages out or fades
+            fade = 1f;
+            age = 0f;
+            quietT = 0f;
+            return;
+        }
         if (y[HIPS] > arena.bounds.bottom + 400f) {
             fade = 0f; // fell out of the world
         } else if (age > 3.4f || quietT > 1.8f) {
@@ -192,7 +264,11 @@ public final class Ragdoll {
                         || y[i] < q.top - r || y[i] > q.bottom + r) {
                     continue;
                 }
-                boolean fromAbove = py[i] + r <= q.top + 2f;
+                // "resting on the surface" beats the previous-position test: a
+                // foot that sinks a pixel below the top would otherwise be
+                // ejected sideways to the platform edge and teleport metres away
+                boolean nearTop = y[i] <= q.top + 3f;
+                boolean fromAbove = py[i] + r <= q.top + 6f || nearTop;
                 boolean fromBelow = py[i] - r >= q.bottom - 2f;
                 if (fromAbove) {
                     y[i] = q.top - r;
@@ -219,6 +295,29 @@ public final class Ragdoll {
      * A knocked-down body that is then killed: keep the pose and physics but give
      * it a fresh lifetime so the corpse stays on stage before fading.
      */
+    /** Adds an impulse to every joint without teleporting the body. */
+    public void kick(float vx, float vy) {
+        float bx = vx / 60f;
+        float by = vy / 60f;
+        for (int i = 0; i < N; i++) {
+            px[i] -= bx;
+            py[i] -= by;
+        }
+    }
+
+    /** Snaps the skeleton onto a pose, clearing all momentum. */
+    public void teleport(float[] tx, float[] ty) {
+        for (int i = 0; i < N; i++) {
+            x[i] = tx[i];
+            y[i] = ty[i];
+            px[i] = tx[i];
+            py[i] = ty[i];
+        }
+        fade = 1f;
+        age = 0f;
+        quietT = 0f;
+    }
+
     public void reborn() {
         age = 0f;
         quietT = 0f;
