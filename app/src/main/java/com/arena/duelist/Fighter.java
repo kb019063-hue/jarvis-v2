@@ -398,16 +398,12 @@ public final class Fighter {
         g.c.save();
         g.c.translate(x, y);
 
-        boolean ragdoll = dead;
-        float rot = ragdoll ? deathRot : 0f;
-        if (ragdoll) {
-            g.c.rotate((float) Math.toDegrees(rot));
-        } else {
-            g.c.rotate(facing == 1 ? 0f : 0f);
+        if (dead) {
+            g.c.rotate((float) Math.toDegrees(deathRot));
         }
 
         float squash = 1f;
-        if (crouch && onGround && !ragdoll) {
+        if (crouch && onGround && !dead) {
             squash = 0.72f;
         }
         g.c.scale(1f, squash);
@@ -420,66 +416,60 @@ public final class Fighter {
             g.alpha(120);
         }
 
+        // dark figures get a light outline and vice versa, so the stickman reads
+        // on both bright and dark arenas
+        int outline = luminance(bodyColor) > 0.55f ? 0x66000000 : 0x66FFFFFF;
+
         float headR = 13f;
         float neckY = -24f;
         float hipY = 12f;
 
-        // shadow already drawn by Game; limbs
         float legSwing = (float) Math.sin(walkPhase) * (onGround ? 16f : 8f);
         float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 16f : 8f);
-        if (!onGround && !ragdoll) {
+        if (!onGround && !dead) {
             legSwing = -14f;
             legSwing2 = 10f;
         }
 
-        // legs
-        g.stroke(HALF_W * 0.36f, hipY, HALF_W * 0.36f + legSwing, FEET, 7f, bodyColor);
-        g.stroke(-HALF_W * 0.36f, hipY, -HALF_W * 0.36f + legSwing2, FEET, 7f, bodyColor);
-        // torso
-        g.stroke(0, neckY, 0, hipY, 7f, bodyColor);
-
-        // arms: swing with attack / shield
-        float swing = 0f;
-        if (attacking) {
-            float t = 1f - Math.max(0f, attackT) / attackDur;
-            swing = (float) Math.sin(t * Math.PI) * (float) Math.PI * 0.9f;
-        }
         float shoulderY = neckY + 8f;
         float armLen = 22f;
-        float backArmX = -facing * 8f;
-        g.stroke(0, shoulderY, backArmX, shoulderY + 18f, 6f, bodyColor);
-
         float handXr;
         float handYr;
         if (shieldOn) {
             handXr = facing * 16f;
             handYr = shoulderY + 4f;
         } else if (attacking) {
+            float t = 1f - Math.max(0f, attackT) / attackDur;
+            float swing = (float) Math.sin(t * Math.PI) * (float) Math.PI * 0.9f;
             handXr = facing * (armLen * (float) Math.cos(swing * 0.9f));
             handYr = shoulderY + armLen * (float) Math.sin(swing * 0.9f) * 0.9f;
         } else {
             handXr = facing * 10f;
             handYr = shoulderY + 20f;
         }
-        g.stroke(0, shoulderY, handXr, handYr, 6f, bodyColor);
 
-        // head
+        // limbs, drawn twice: outline pass then body pass
+        limb(g, HALF_W * 0.36f, hipY, HALF_W * 0.36f + legSwing, FEET, 7f, bodyColor, outline);
+        limb(g, -HALF_W * 0.36f, hipY, -HALF_W * 0.36f + legSwing2, FEET, 7f, bodyColor, outline);
+        limb(g, 0, neckY, 0, hipY, 7f, bodyColor, outline);
+        limb(g, 0, shoulderY, -facing * 8f, shoulderY + 18f, 6f, bodyColor, outline);
+        limb(g, 0, shoulderY, handXr, handYr, 6f, bodyColor, outline);
+
+        // head with outline
+        g.circle(0, neckY - headR + 4f, headR + 1.8f, outline);
         g.circle(0, neckY - headR + 4f, headR, bodyColor);
-        // eye
-        g.circle(facing * 5f, neckY - headR + 2f, 2.2f, 0xFF101018);
+        g.circle(facing * 5f, neckY - headR + 2f, 2.4f, 0xFF101018);
         drawHair(g, bodyColor);
 
-        // weapon in hand
         drawWeapon(g, handXr, handYr);
 
-        // shield bubble
         if (shieldOn && shield > 0) {
-            int a = 60 + (int) (40f * (shield / maxShield));
+            int a = 70 + (int) (50f * (shield / maxShield));
             g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
             g.line.setStrokeWidth(3f);
             g.c.drawCircle(0, -6f, 46f, g.line);
-            g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 30));
-            g.line.setStrokeWidth(10f);
+            g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 34));
+            g.line.setStrokeWidth(11f);
             g.c.drawCircle(0, -6f, 46f, g.line);
         }
 
@@ -487,12 +477,24 @@ public final class Fighter {
         g.reset();
 
         if (!dead && health < maxHealth) {
-            // small health pip above head
             float w = 44f;
             g.rrect(x - w / 2, y - HEAD - 34f, w, 5f, 2.5f, 0x88000000);
             g.rrect(x - w / 2, y - HEAD - 34f, w * (health / maxHealth), 5f, 2.5f,
                     health > 50 ? 0xFF7BFF9E : (health > 25 ? 0xFFFFD166 : 0xFFFF5D5D));
         }
+    }
+
+    private void limb(Painter g, float x1, float y1, float x2, float y2, float w,
+                      int body, int outline) {
+        g.stroke(x1, y1, x2, y2, w + 3.4f, outline);
+        g.stroke(x1, y1, x2, y2, w, body);
+    }
+
+    private static float luminance(int c) {
+        float r = ((c >> 16) & 0xFF) / 255f;
+        float gg = ((c >> 8) & 0xFF) / 255f;
+        float b = (c & 0xFF) / 255f;
+        return 0.299f * r + 0.587f * gg + 0.114f * b;
     }
 
     private void drawHair(Painter g, int body) {

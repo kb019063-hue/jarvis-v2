@@ -110,6 +110,7 @@ public final class Game {
     private float viewW = 960f;
     private float viewH = 540f;
     private float camX, camY;
+    private static final float ZOOM = 1.42f;
     private float shake;
     private float hitStop;
     private float time;
@@ -157,22 +158,21 @@ public final class Game {
     }
 
     private void layoutControls() {
-        float margin = 96f;
-        float stickY = viewH - 96f;
-        float leftX = margin;
-        float rightX = viewW - margin;
-        stickA.setBase(leftX, stickY, 84f);
-        stickB.setBase(rightX, stickY, 84f);
+        float stickY = viewH - 92f;
+        float leftX = 92f;
+        float rightX = viewW - 92f;
+        stickA.setBase(leftX, stickY, 74f);
+        stickB.setBase(rightX, stickY, 74f);
 
-        btnAtkA.set(leftX + 136f, viewH - 74f, 46f, 0);
-        btnJumpA.set(leftX + 150f, viewH - 178f, 36f, 1);
-        btnShieldA.set(leftX + 54f, viewH - 208f, 31f, 2);
+        btnAtkA.set(leftX + 116f, viewH - 66f, 42f, 0);
+        btnJumpA.set(leftX + 134f, viewH - 158f, 31f, 1);
+        btnShieldA.set(leftX + 60f, viewH - 192f, 26f, 2);
 
-        btnAtkB.set(rightX - 136f, viewH - 74f, 46f, 0);
-        btnJumpB.set(rightX - 150f, viewH - 178f, 36f, 1);
-        btnShieldB.set(rightX - 54f, viewH - 208f, 31f, 2);
+        btnAtkB.set(rightX - 116f, viewH - 66f, 42f, 0);
+        btnJumpB.set(rightX - 134f, viewH - 158f, 31f, 1);
+        btnShieldB.set(rightX - 60f, viewH - 192f, 26f, 2);
 
-        pauseRect.set(viewW - 62f, 14f, viewW - 18f, 58f);
+        pauseRect.set(viewW - 60f, 88f, viewW - 20f, 128f);
     }
 
     // ------------------------------------------------------------------ input
@@ -1064,22 +1064,27 @@ public final class Game {
     }
 
     private void updateCamera(float dt) {
+        float vw = viewW / ZOOM;
+        float vh = viewH / ZOOM;
         float tx = (fighters[0].x + fighters[1].x) * 0.5f;
         float ty = (fighters[0].y + fighters[1].y) * 0.5f;
-        float targetX = tx - viewW * 0.5f;
-        float targetY = ty - viewH * 0.5f;
-        float minX = arena.bounds.left;
-        float maxX = arena.bounds.right - viewW;
+        float targetX = tx - vw * 0.5f;
+        float targetY = ty - vh * 0.55f;
+
+        float minX = arena.bounds.left - 40f;
+        float maxX = arena.bounds.right - vw + 40f;
         if (maxX < minX) {
-            maxX = minX = (arena.bounds.left + arena.bounds.right - viewW) * 0.5f;
+            maxX = minX = (arena.bounds.left + arena.bounds.right - vw) * 0.5f;
         }
         targetX = Math.max(minX, Math.min(maxX, targetX));
-        float minY = arena.bounds.top - 40f;
-        float maxY = arena.bounds.bottom - viewH + 40f;
+
+        float minY = arena.bounds.top - 120f;
+        float maxY = arena.bounds.bottom - vh + 70f;
         if (maxY < minY) {
-            maxY = minY = (arena.bounds.top + arena.bounds.bottom - viewH) * 0.5f;
+            maxY = minY = (arena.bounds.top + arena.bounds.bottom - vh) * 0.5f;
         }
         targetY = Math.max(minY, Math.min(maxY, targetY));
+
         float k = 1f - (float) Math.pow(0.0016f, dt);
         camX += (targetX - camX) * k;
         camY += (targetY - camY) * k;
@@ -1143,20 +1148,22 @@ public final class Game {
         g.gradient(0, 0, viewW, viewH, arena.skyTop, arena.skyBottom);
 
         c.save();
+        c.scale(ZOOM * 0.55f, ZOOM * 0.55f);
         c.translate(-camX * 0.35f + shx * 0.4f, -camY * 0.2f + shy * 0.4f);
         drawBackdrop(g);
         c.restore();
 
         c.save();
-        c.translate(-camX + shx, -camY + shy);
+        c.scale(ZOOM, ZOOM);
+        c.translate(-camX + shx / ZOOM, -camY + shy / ZOOM);
         drawArena(g);
         for (int i = 0; i < pickups.size(); i++) {
             drawPickup(g, pickups.get(i));
         }
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            g.alpha(70);
-            g.circle(f.x, f.y + Fighter.FEET, 26, 0xFF000000);
+            g.alpha(46);
+            g.circle(f.x, f.y + Fighter.FEET - 2f, 19, 0xFF000000);
             g.reset();
             f.draw(g);
         }
@@ -1216,6 +1223,39 @@ public final class Game {
     }
 
     private void drawArena(Painter g) {
+        for (int i = 0; i < arena.hazards.size(); i++) {
+            Maps.Hazard hz = arena.hazards.get(i);
+            RectF hr = hz.r;
+            if (hz.type == Maps.HAZ_WATER) {
+                g.rect(hr.left, hr.top, hr.width(), hr.height(), 0xFF1E5A88);
+                g.rect(hr.left, hr.top, hr.width(), 12f, 0xFF3D8FC4);
+                for (int k = 0; k < 16; k++) {
+                    float wx = hr.left + (k / 16f) * hr.width() + 18;
+                    float wy = hr.top + 14 + (float) Math.sin(time * 2.2f + k) * 5f;
+                    g.stroke(wx, wy, wx + 46, wy, 3, 0x77BFEBFF);
+                }
+            } else if (hz.type == Maps.HAZ_LAVA) {
+                g.rect(hr.left, hr.top, hr.width(), hr.height(), 0xFF6E1E0A);
+                g.rect(hr.left, hr.top, hr.width(), 10f, 0xFFFF7A3C);
+                for (int k = 0; k < 18; k++) {
+                    float wx = hr.left + (k / 18f) * hr.width() + 22;
+                    float wy = hr.top + 12 + (float) Math.sin(time * 1.7f + k * 1.3f) * 6f;
+                    g.circle(wx, wy, 7, 0x99FFA347);
+                }
+            } else {
+                g.rect(hr.left, hr.top, hr.width(), hr.height(), 0x44140A20);
+                for (int k = 0; k < 20; k++) {
+                    float wx = hr.left + 16 + k * (hr.width() / 20f);
+                    Path spike = new Path();
+                    spike.moveTo(wx - 9, hr.top + 26);
+                    spike.lineTo(wx, hr.top);
+                    spike.lineTo(wx + 9, hr.top + 26);
+                    spike.close();
+                    g.path(spike, 0xFFB8B8CC);
+                }
+            }
+        }
+
         for (int i = 0; i < arena.platforms.size(); i++) {
             Maps.Platform p = arena.platforms.get(i);
             RectF r = p.r;
@@ -1236,37 +1276,6 @@ public final class Game {
             g.rect(r.left, r.top + 7f, r.width(), 3f, Painter.withAlpha(0xFF000000, 60));
         }
 
-        for (int i = 0; i < arena.hazards.size(); i++) {
-            Maps.Hazard h = arena.hazards.get(i);
-            RectF r = h.r;
-            if (h.type == Maps.HAZ_WATER) {
-                g.rect(r.left, r.top, r.width(), r.height(), 0xFF2A6FA0);
-                for (int k = 0; k < 12; k++) {
-                    float wx = r.left + (k / 12f) * r.width() + 20;
-                    float wy = r.top + 8 + (float) Math.sin(time * 2f + k) * 4f;
-                    g.stroke(wx, wy, wx + 40, wy, 3, 0x66BFEBFF);
-                }
-            } else if (h.type == Maps.HAZ_LAVA) {
-                g.rect(r.left, r.top, r.width(), r.height(), 0xFF8A2A10);
-                for (int k = 0; k < 14; k++) {
-                    float wx = r.left + (k / 14f) * r.width() + 24;
-                    float wy = r.top + 10 + (float) Math.sin(time * 1.7f + k * 1.3f) * 6f;
-                    g.circle(wx, wy, 8, 0x88FF7A3C);
-                }
-            } else {
-                g.rect(r.left, r.top, r.width(), r.height(), 0x55241830);
-                for (int k = 0; k < 18; k++) {
-                    float wx = r.left + 20 + k * (r.width() / 18f);
-                    g.line.setColor(0xFFB8B8CC);
-                    g.line.setStrokeWidth(2.5f);
-                    Path path = new Path();
-                    path.moveTo(wx - 10, r.top + 24);
-                    path.lineTo(wx, r.top + 2);
-                    path.lineTo(wx + 10, r.top + 24);
-                    g.c.drawPath(path, g.line);
-                }
-            }
-        }
     }
 
     private void drawShot(Painter g, Projectile p) {
@@ -1363,8 +1372,8 @@ public final class Game {
             String s = count > 0 ? String.valueOf(count) : "FIGHT!";
             g.size(count > 0 ? 96 : 74);
             g.textShadowCenter(s, viewW / 2, viewH / 2 + 20, 0xFFFFE38A, 5);
-            g.size(18);
-            g.textCenter(arena.name, viewW / 2, 46, 0xCCFFFFFF);
+            g.size(14);
+            g.textCenter(arena.name, viewW / 2, viewH - 26, 0x99FFFFFF);
         } else if (phase == PH_ROUND_END) {
             g.size(84);
             g.textShadowCenter("K.O.", viewW / 2, viewH / 2, 0xFFFF6B8A, 5);
