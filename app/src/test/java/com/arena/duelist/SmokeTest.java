@@ -204,14 +204,15 @@ public class SmokeTest {
         boot();
         game.debugStartMatch(0, 0);
         game.debugStartFight();
-        game.debugFighter(1).kill(420);
+        // modest knockback so the body stays in frame for the screenshot
+        game.debugFighter(1).kill(120);
 
-        step(20);
+        step(14);
         assertEquals("a KO should hand the body over to the ragdoll", 1,
                 game.debugRagdollCount());
         shot("16-ragdoll-ko");
 
-        step(70);
+        step(66);
         shot("17-ragdoll-settled");
         assertEquals("the corpse should still be on stage mid round-end", 1,
                 game.debugRagdollCount());

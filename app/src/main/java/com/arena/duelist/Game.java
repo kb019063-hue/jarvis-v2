@@ -1174,6 +1174,16 @@ public final class Game {
         float vh = viewH / ZOOM;
         float tx = (focusX(fighters[0]) + focusX(fighters[1])) * 0.5f;
         float ty = (focusY(fighters[0]) + focusY(fighters[1])) * 0.5f;
+        // Once someone is out, lean the camera toward the body: ragdolls fly a
+        // long way, and an even midpoint left the corpse off-screen entirely.
+        boolean endPhase = phase == PH_ROUND_END || phase == PH_MATCH_END
+                || phase == PH_SURVIVAL_BREAK;
+        if (endPhase && fighters[0].dead != fighters[1].dead) {
+            int dead = fighters[0].dead ? 0 : 1;
+            int alive = 1 - dead;
+            tx = focusX(fighters[dead]) * 0.78f + focusX(fighters[alive]) * 0.22f;
+            ty = focusY(fighters[dead]) * 0.72f + focusY(fighters[alive]) * 0.28f;
+        }
         float targetX = tx - vw * 0.5f;
         float targetY = ty - vh * 0.55f;
 
