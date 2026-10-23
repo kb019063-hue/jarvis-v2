@@ -618,9 +618,9 @@ public final class Fighter {
                 bottom = y + FEET;
                 continue;
             }
-            // side walls
+            // side walls (one-way ledges deliberately have none)
             boolean overlapY = bottom > r.top + 6 && top < r.bottom - 6;
-            if (overlapY) {
+            if (!oneWay && overlapY) {
                 if (x < r.centerX() && right > r.left && x > r.left) {
                     x = r.left - HALF_W;
                     vx = Math.min(0, vx) - 30;
