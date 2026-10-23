@@ -1,8 +1,14 @@
-# Current review: Stick Duelist vs. *Supreme Duelist Stickman*
+# Pre-0.3 review: Stick Duelist vs. *Supreme Duelist Stickman*
 
 **Review date:** 2026-10-23
 
-**Current application version:** 0.2.1 (`versionCode 3`)
+**Reviewed application version:** 0.2.1 (`versionCode 3`)
+
+> Historical review of 0.2.1. Version 0.3.0 adds independent CPU/local football,
+> nearest-event projectile collision, haptic permission and interruption/loop fixes.
+> The subsequent 0.3.1 playability pass fixes close-range AI, corpse replay and camera behavior, and rebuilds the arenas.
+> See [the 0.3.1 notes](IMPLEMENTATION-0.3.1.md), [0.3.0 update](IMPLEMENTATION-0.3.md) and the current README.
+> Remaining claims of absent football below describe the older reviewed revision.
 
 ## Verdict
 

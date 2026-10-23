@@ -12,6 +12,7 @@ public final class Cpu {
 
     private final Random rnd = new Random();
     private float thinkTimer;
+    private float attackTimer;
     private float move;
     private boolean jump, attack, shield;
     private float aimX = 1f, aimY = 0f;
@@ -23,6 +24,7 @@ public final class Cpu {
 
     public void reset() {
         thinkTimer = 0;
+        attackTimer = 0;
         move = 0;
         jump = false;
         attack = false;
@@ -33,6 +35,8 @@ public final class Cpu {
         routeLandingX = 0f;
         jumpCooldown = 0f;
     }
+
+    void seed(long seed) { rnd.setSeed(seed); }
 
     public float move() {
         return move;
@@ -73,23 +77,24 @@ public final class Cpu {
         }
 
         thinkTimer -= dt;
+        attackTimer = Math.max(0f, attackTimer - dt);
         jumpCooldown = Math.max(0f, jumpCooldown - dt);
 
-        float skill = 0.25f + level * 0.22f;          // 0.25 .. 0.91
         float reaction = 0.34f - level * 0.07f;      // seconds between re-decisions
-        float aggro = 0.35f + level * 0.15f;
 
         float dx = foe.x - me.x;
         float dy = foe.y - me.y;
         float dist = Math.abs(dx);
         float dir = dx >= 0 ? 1f : -1f;
 
-        aimX = dir;
-        aimY = dy < -60 ? -0.4f : (dy > 60 ? 0.5f : 0f);
+        float aimLength = (float) Math.sqrt(dx * dx + dy * dy);
+        aimX = aimLength > 1f ? dx / aimLength : dir;
+        aimY = aimLength > 1f ? dy / aimLength : 0f;
 
         // Once a route jump starts, commit to its landing. Changing decision
         // every frame over a pit was how the old AI steered itself into water.
-        if (routePlatform >= 0 && !me.onGround) {
+        if (routePlatform >= 0 && !me.onGround
+                && (dist > me.weaponReach() + 44f || Math.abs(dy) > 65f)) {
             followRoute(me, arena);
             return;
         }
@@ -108,101 +113,90 @@ public final class Cpu {
             return;
         }
 
-        // Use real platform routes before treating the hazard ahead as a wall.
-        if (me.onGround && navigate(me, foe, arena)) {
+        boolean ranged = Weapons.DEFS[me.weapon].type != Weapons.MELEE;
+        // Reach is measured from the physical hand, not the catalogue's blade
+        // length alone. Fists used to stop attacking at 30.6px while body push
+        // kept fighters >=32px apart: an unreachable attack condition.
+        float strikeRange = me.weaponReach() + 44f;
+        boolean sameHeight = Math.abs(dy) < (ranged ? 100f : 65f);
+        boolean close = sameHeight && dist <= strikeRange;
+        boolean ready = !me.attacking && me.cooldown <= 0f
+                && me.hurtT <= 0f && me.spawnT <= 0f;
+        attack = false;
+        shield = false;
+
+        // Close combat takes precedence over routing. Even on different ledges,
+        // an opponent already in reach must not be ignored to plan another jump.
+        if (!ranged && close) {
+            routePlatform = -1;
+            jump = false;
+            float ideal = Math.max(34f, me.weaponReach() * 0.65f + 28f);
+            move = dist > ideal + 5f ? dir * 0.45f : 0f;
+            attack = requestAttack(ready, level);
             return;
         }
+
+        if (me.onGround && navigate(me, foe, arena)) return;
 
         boolean hazardAhead = hazardDanger(me, arena, me.x + dir * 85f, 48f);
         if (hazardAhead) {
-            attack = false;
-            shield = false;
             jump = false;
             move = -dir;
+            // A ranged fighter can still fire while retreating from an edge.
+            attack = requestAttack(ranged && sameHeight && ready && clearShot(me, foe, arena), level);
             return;
         }
 
-        if (thinkTimer > 0f) {
-            return;
-        }
-        thinkTimer = reaction * (0.6f + rnd.nextFloat() * 0.9f);
-
-        boolean foeAttacking = foe.attacking && foe.hurtT <= 0f;
-        boolean myRanged = Weapons.DEFS[me.weapon].type != Weapons.MELEE;
-        float reach = Weapons.DEFS[me.weapon].type == Weapons.MELEE
-                ? Weapons.DEFS[me.weapon].reach : 340f;
-
-        shield = false;
-        move = 0;
-        attack = false;
-
-        if (me.health < 25 && rnd.nextFloat() < 0.5f * (1f - skill * 0.5f)) {
-            move = dist < 280 ? -dir : 0f;
-            shield = dist < 190 && level >= 1;
-            if (dist > 420 && myRanged && me.ammo != 0) {
-                attack = true;
+        if (ranged) {
+            // Fire at close range AND while changing distance, not just in a
+            // narrow 260–360px band. Reaction delay governs travel, not cooldown.
+            attack = requestAttack(sameHeight && dist < 700f && ready && clearShot(me, foe, arena), level);
+            if (thinkTimer <= 0f) {
+                thinkTimer = reaction;
+                move = dist > 360f ? dir : (dist < 200f ? -dir * 0.65f : 0f);
+                if (!safeStep(me, arena, move)) move = 0f;
             }
             return;
         }
 
-        if (foeAttacking && dist < Weapons.DEFS[foe.weapon].reach + 70) {
-            float r = rnd.nextFloat();
-            if (r < skill * 0.7f) {
-                if (rnd.nextFloat() < 0.55f) {
-                    shield = true;
-                    move = -dir * 0.4f;
-                } else {
-                    requestJump(me);
-                    move = -dir;
-                }
-            } else {
-                move = -dir;
-            }
-            return;
-        }
-
-        if (myRanged) {
-            float ideal = 320f;
-            if (dist > ideal + 40) {
-                move = dir;
-            } else if (dist < ideal - 60) {
-                move = -dir;
-            } else {
-                move = 0;
-                if (rnd.nextFloat() < 0.85f && me.ammo != 0) {
-                    attack = true;
-                }
-                if (rnd.nextFloat() < 0.08f) {
-                    requestJump(me);
-                }
-            }
-            if (me.ammo == 0) {
-                move = dir;
-            }
-            return;
-        }
-
-        // Melee spacing. Long-distance travel belongs to navigate(), not random
-        // jumps that can repeatedly hit the underside of a nearby ledge.
-        if (dist > reach * 0.85f) {
+        if (thinkTimer <= 0f) {
+            thinkTimer = reaction;
             move = dir;
-            if (dy < -50 && rnd.nextFloat() < 0.55f) {
-                requestJump(me);
-            }
-        } else if (dist < reach * 0.45f) {
-            move = rnd.nextFloat() < 0.35f ? -dir : 0f;
-            if (rnd.nextFloat() < aggro) {
-                attack = true;
-            }
-            if (rnd.nextFloat() < 0.06f) {
-                shield = true;
-            }
-        } else {
-            if (rnd.nextFloat() < 0.82f) {
-                attack = true;
-            }
-            move = rnd.nextFloat() < 0.3f ? dir : 0f;
+            if (dy < -70f && me.onGround) requestJump(me);
         }
+    }
+
+    private boolean requestAttack(boolean ready, int level) {
+        if (!ready || attackTimer > 0f) return false;
+        // Difficulty changes cadence without ever creating an impossible range.
+        attackTimer = 0.12f + (3 - Math.max(0, Math.min(3, level))) * 0.12f
+                + rnd.nextFloat() * 0.08f;
+        return true;
+    }
+
+    private boolean clearShot(Fighter me, Fighter foe, Maps.Arena arena) {
+        for (Maps.Platform platform : arena.platforms) {
+            if (Projectile.segmentRectEntry(platform.r, me.handX(), me.handY(),
+                    foe.x, foe.y - 8f, 3f) >= 0f) return false;
+        }
+        return true;
+    }
+
+    /** No blind retreat/dash off a ledge. A supported floor must be ahead. */
+    private boolean safeStep(Fighter me, Maps.Arena arena, float direction) {
+        if (Math.abs(direction) < 0.01f) return true;
+        float x = me.x + Math.signum(direction) * 90f;
+        for (Maps.Platform p : arena.platforms) {
+            if (x >= p.r.left + 20f && x <= p.r.right - 20f
+                    && Math.abs(p.r.top - (me.y + Fighter.FEET)) < 40f) return true;
+        }
+        return false;
+    }
+
+    boolean skillSafe(Fighter me, Maps.Arena arena) {
+        boolean dash = me.weapon == Weapons.FIST || me.weapon == Weapons.SWORD
+                || me.weapon == Weapons.SPEAR || me.weapon == Weapons.ENERGY_BLADE;
+        return !dash || (Math.abs(aimY) < 0.25f && safeStep(me, arena, aimX));
     }
 
     /** Choose and execute one platform-to-platform step toward the opponent. */

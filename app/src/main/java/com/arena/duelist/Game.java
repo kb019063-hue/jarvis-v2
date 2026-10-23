@@ -45,6 +45,8 @@ public final class Game {
     private static final int M_LOCAL = 1;
     private static final int M_SURVIVAL = 2;
     private static final int M_BOSS = 3;
+    private static final int M_FOOTBALL_CPU = 4;
+    private static final int M_FOOTBALL_LOCAL = 5;
     private static final int PLAYER_COLOR = 0xFF48E879;
     private static final int CPU_COLOR = 0xFFFFE52E;
 
@@ -76,6 +78,8 @@ public final class Game {
     private static final int A_HOW = 13;
     private static final int A_MAPS_FROM_PAUSE = 14;
     private static final int A_BOSS = 15;
+    private static final int A_FOOTBALL_CPU = 16;
+    private static final int A_FOOTBALL_LOCAL = 17;
     private static final int A_SOUND = 20;
     private static final int A_VOICE = 21;
     private static final int A_GRAVITY = 22;
@@ -98,6 +102,7 @@ public final class Game {
     private final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
     private final ArrayList<Btn> uiBtns = new ArrayList<Btn>();
     private final Cpu cpu = new Cpu();
+    private final Football football = new Football();
 
     private Maps.Arena arena;
     private int arenaIndex;
@@ -131,10 +136,12 @@ public final class Game {
     private float viewW = 960f;
     private float viewH = 540f;
     private float camX, camY;
-    private static final float ZOOM = 1.55f;
+    private static final float ZOOM = 1.45f;
     /** Camera zoom, eased between ZOOM and ZOOM_MIN as the fighters separate. */
     private float zoom = ZOOM;
-    private static final float ZOOM_MIN = 1.02f;
+    private static final float ZOOM_MIN = 0.40f;
+    private boolean cameraReady;
+    private float zoomHold;
     private float shake;
     private float hitStop;
     private float time;
@@ -170,6 +177,8 @@ public final class Game {
         viewH = 540f;
         viewW = w / scale;
         layoutControls();
+        cameraReady = false;
+        updateCamera(0f);
     }
 
     private void layoutControls() {
@@ -208,7 +217,7 @@ public final class Game {
             if (phase != PH_FIGHT) {
                 return;
             }
-            if (mode == M_LOCAL) {
+            if (isLocal()) {
                 // One stick per player: hold to move/aim/attack, release for
                 // the equipped weapon's skill. No separate button clusters.
                 if (stickA.grab(id, x, y)) {
@@ -251,7 +260,7 @@ public final class Game {
                 useAbility(fighters[0], stickA.dx, stickA.dy);
             }
         }
-        if (mode == M_LOCAL && stickB.pointer == id) {
+        if (isLocal() && stickB.pointer == id) {
             stickB.move(id, x, y);
             if (screen == S_PLAY && !paused && phase == PH_FIGHT) {
                 useAbility(fighters[1], stickB.dx, stickB.dy);
@@ -352,6 +361,12 @@ public final class Game {
                 pendingMode = M_BOSS;
                 screen = S_MAPS;
                 break;
+            case A_FOOTBALL_CPU:
+                resetMatch(M_FOOTBALL_CPU, 0, true);
+                break;
+            case A_FOOTBALL_LOCAL:
+                resetMatch(M_FOOTBALL_LOCAL, 0, true);
+                break;
             case A_ARSENAL:
                 screen = S_ARSENAL;
                 break;
@@ -390,7 +405,11 @@ public final class Game {
                 // keep the mode we are actually playing; otherwise picking an
                 // arena after a pause silently restarted as Quick Fight
                 pendingMode = mode;
-                screen = S_MAPS;
+                if (isFootball()) {
+                    resetMatch(mode, 0, true);
+                } else {
+                    screen = S_MAPS;
+                }
                 break;
             case A_SOUND:
                 profile.sound = !profile.sound;
@@ -437,6 +456,15 @@ public final class Game {
                 break;
             default:
                 break;
+        }
+    }
+
+    /** System interruptions pause explicitly; resuming requires a deliberate tap. */
+    public synchronized void suspend() {
+        releaseControls();
+        if (screen == S_PLAY) {
+            paused = true;
+            uiBtns.clear();
         }
     }
 
@@ -493,11 +521,19 @@ public final class Game {
         shots.clear();
     }
 
+    private boolean isFootball() {
+        return mode == M_FOOTBALL_CPU || mode == M_FOOTBALL_LOCAL;
+    }
+
+    private boolean isLocal() {
+        return mode == M_LOCAL || mode == M_FOOTBALL_LOCAL;
+    }
+
     private void resetMatch(int newMode, int map, boolean startNow) {
         releaseControls();
         mode = newMode;
         arenaIndex = Math.max(0, Math.min(Maps.ALL.length - 1, map));
-        arena = Maps.ALL[arenaIndex];
+        arena = isFootball() ? Maps.FOOTBALL : Maps.ALL[arenaIndex];
         float ax = Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET);
         float bx = Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET);
         fighters[0].reset(ax, arena.spawnAy);
@@ -507,8 +543,8 @@ public final class Game {
         fighters[1].maxHealth = 100;
         fighters[1].health = 100;
         fighters[0].cpu = false;
-        fighters[1].cpu = (newMode != M_LOCAL);
-        fighters[1].name = mode == M_LOCAL ? "P2" : "CPU";
+        fighters[1].cpu = !isLocal();
+        fighters[1].name = isLocal() ? "P2" : "CPU";
         fighters[0].name = "P1";
         fighters[0].color = profile.skinColor;
         fighters[0].hair = profile.hairStyle;
@@ -527,6 +563,11 @@ public final class Game {
             float hpm = 70f + 18f;
             fighters[1].maxHealth = hpm;
             fighters[1].health = hpm;
+        }
+        if (isFootball()) {
+            fighters[0].giveWeapon(Weapons.FIST);
+            fighters[1].giveWeapon(Weapons.FIST);
+            football.reset();
         }
         cpu.reset();
         shots.clear();
@@ -548,6 +589,10 @@ public final class Game {
         countAnnounced = false;
         paused = false;
         resultDelay = 0;
+        hitStop = 0f;
+        cameraReady = false;
+        zoomHold = 0f;
+        updateCamera(0f);
         layoutControls();
         if (startNow) {
             screen = S_PLAY;
@@ -607,9 +652,9 @@ public final class Game {
                 stepIntro();
                 for (int i = 0; i < 2; i++) {
                     Fighter f = fighters[i];
-                    f.update(dt, arena, profile.gravity, profile.energyShield, false);
+                    f.update(dt, arena, isFootball() || profile.gravity,
+                            !isFootball() && profile.energyShield, false);
                 }
-                updateCamera(dt);
                 break;
             case PH_FIGHT:
                 stepFight(dt);
@@ -664,6 +709,10 @@ public final class Game {
     }
 
     private void stepFight(float dt) {
+        if (isFootball()) {
+            stepFootball(dt);
+            return;
+        }
         spawnTimer -= dt;
         if (spawnTimer <= 0 && pickups.size() < 3 && mode != M_SURVIVAL) {
             spawnTimer = 5.5f + rnd.nextFloat() * 3f;
@@ -731,10 +780,47 @@ public final class Game {
         }
     }
 
+    /** Football has ball contact, not weapon damage, ammo drops or K.O. victories. */
+    private void stepFootball(float dt) {
+        applyStick(fighters[0], stickA);
+        Fighter b = fighters[1];
+        if (isLocal()) {
+            applyStick(b, stickB);
+        } else {
+            // Approach from the right so the CPU shoots at the LEFT goal.
+            float targetX = Math.min(Football.WIDTH - 35f, football.x + 65f);
+            float dx = targetX - b.x;
+            float move = Math.max(-1f, Math.min(1f, dx / 65f));
+            boolean near = Math.abs(football.x - b.x) < 160f;
+            boolean jump = near && football.y < b.y - 25f && b.onGround;
+            b.input(move, -1f, -0.15f, jump, near, false);
+            if (near && b.abilityT <= 0f) useAbility(b, -1f, -0.18f);
+        }
+        for (int i = 0; i < 2; i++) {
+            Fighter f = fighters[i];
+            f.update(dt, arena, true, false);
+            // The pitch is enclosed: jumping cannot leave play or kill a player.
+            if (f.y - 50f < Football.CEILING) {
+                f.y = Football.CEILING + 50f;
+                f.vy = Math.max(0f, f.vy);
+            }
+        }
+        int scorer = football.update(dt, fighters);
+        if (scorer >= 0) {
+            if (scorer == 0) roundWinsA++; else roundWinsB++;
+            phase = PH_ROUND_END;
+            phaseT = 1.6f;
+            releaseControls();
+            announce("Goal!");
+            sfx(SoundFx.KO);
+            host.vibrate(45);
+        }
+    }
+
     private void readControls(float dt) {
         Fighter a = fighters[0];
         applyStick(a, stickA);
-        if (mode == M_LOCAL) {
+        if (isLocal()) {
             applyStick(fighters[1], stickB);
         } else if (fighters[1].cpu) {
             Fighter b = fighters[1];
@@ -742,7 +828,7 @@ public final class Game {
                     : (mode == M_BOSS ? Math.min(3, profile.difficulty + 1) : profile.difficulty);
             cpu.think(b, a, arena, dt, lvl);
             boolean attack = cpu.attack();
-            boolean special = attack && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
+            boolean special = attack && cpu.skillSafe(b, arena) && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
                     && useAbility(b, cpu.aimX(), cpu.aimY());
             b.input(cpu.move(), cpu.aimX(), cpu.aimY(), cpu.jump(),
                     attack && !special, cpu.shield());
@@ -837,6 +923,13 @@ public final class Game {
         f.aimY = dirY;
         f.weaponAngle = (float) Math.atan2(dirY, dirX);
         f.facing = dirX >= 0f ? 1 : -1;
+        if (isFootball()) {
+            if (!football.powerKick(f, dirX, dirY)) return false;
+            f.abilityT = 2.4f;
+            sfx(SoundFx.HIT);
+            fx.ring(football.x, football.y, 0xFFFFD166, 32f, 0.3f);
+            return true;
+        }
         int w = f.weapon;
         f.abilityT = abilityCooldown(w);
         float angle = f.weaponAngle;
@@ -1106,16 +1199,21 @@ public final class Game {
 
             // Sweep the projectile path for this frame; point-only checks let
             // fast shots tunnel through thin platforms at low frame rates.
-            boolean hitWall = false;
+            float wallT = Float.MAX_VALUE;
             for (int k = 0; k < arena.platforms.size(); k++) {
                 float impactT = Projectile.segmentRectEntry(arena.platforms.get(k).r,
                         p.prevX, p.prevY, p.x, p.y, p.r);
                 if (impactT >= 0f) {
-                    p.x = p.prevX + (p.x - p.prevX) * impactT;
-                    p.y = p.prevY + (p.y - p.prevY) * impactT;
-                    hitWall = true;
-                    break;
+                    wallT = Math.min(wallT, impactT);
                 }
+            }
+            boolean canHit = p.special != 3 || (!p.hitThisPass && p.hitCount < 2);
+            float hitT = !p.dead && !foe.dead && canHit ? projectileContactT(foe, p) : -1f;
+            // Resolve the earliest event on the ORIGINAL segment, not list order.
+            boolean hitWall = wallT != Float.MAX_VALUE && (hitT < 0f || wallT <= hitT);
+            if (hitWall) {
+                p.x = p.prevX + (p.x - p.prevX) * wallT;
+                p.y = p.prevY + (p.y - p.prevY) * wallT;
             }
             if (hitWall || p.x < arena.bounds.left - 200 || p.x > arena.bounds.right + 200
                     || p.y > arena.bounds.bottom + 300) {
@@ -1131,8 +1229,6 @@ public final class Game {
                 // A boomerang survives its hit, so it is capped to one hit per
                 // pass and two per throw. Without this it re-hit every frame it
                 // overlapped - six hits for a single throw.
-                boolean canHit = p.special != 3 || (!p.hitThisPass && p.hitCount < 2);
-                float hitT = canHit ? projectileContactT(foe, p) : -1f;
                 if (hitT >= 0f) {
                     // Place the impact at first contact on this frame's path,
                     // not beyond the fighter on a fast frame.
@@ -1308,6 +1404,23 @@ public final class Game {
     }
 
     private void nextRound() {
+        if (isFootball()) {
+            if (roundWinsA >= 3 || roundWinsB >= 3) {
+                endMatch(roundWinsA > roundWinsB);
+                return;
+            }
+            releaseControls();
+            fighters[0].reset(arena.spawnAx, arena.spawnAy);
+            fighters[1].reset(arena.spawnBx, arena.spawnBy);
+            fighters[0].giveWeapon(Weapons.FIST);
+            fighters[1].giveWeapon(Weapons.FIST);
+            football.reset();
+            phase = PH_INTRO;
+            phaseT = 3.4f;
+            lastCount = -1;
+            countAnnounced = false;
+            return;
+        }
         if (roundWinsA >= 2 || roundWinsB >= 2) {
             endMatch(roundWinsA > roundWinsB);
             return;
@@ -1324,9 +1437,14 @@ public final class Game {
         shots.clear();
         pickups.clear();
         phase = PH_INTRO;
-        phaseT = 3.0f;
+        phaseT = 3.4f;
         lastCount = -1;
         countAnnounced = false;
+        cpu.reset();
+        hitStop = 0f;
+        cameraReady = false;
+        zoomHold = 0f;
+        updateCamera(0f);
     }
 
     private void onEnemyDown() {
@@ -1411,7 +1529,7 @@ public final class Game {
             resultSub = "Bosses defeated " + bossesDefeated + "/" + BOSS_NAMES.length
                     + "  ·  " + arena.name;
         } else {
-            resultSub = "Rounds " + roundWinsA + " - " + roundWinsB + "  ·  " + arena.name;
+            resultSub = (isFootball() ? "Goals " : "Rounds ") + roundWinsA + " - " + roundWinsB + "  ·  " + arena.name;
         }
         profile.addCoins(resultCoins);
         profile.save();
@@ -1432,7 +1550,8 @@ public final class Game {
 
     private void updateWorldFx(float dt) {
         for (int i = 0; i < 2; i++) {
-            fighters[i].update(dt, arena, profile.gravity, profile.energyShield, false);
+            fighters[i].update(dt, arena, isFootball() || profile.gravity,
+                    !isFootball() && profile.energyShield, false);
         }
         updateShots(dt);
         updatePickups(dt);
@@ -1469,7 +1588,7 @@ public final class Game {
     private void updateRagdolls(float dt) {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            if (f.ragdolled() && f.body == null) {
+            if (f.down && f.body == null) {
                 f.ensureBody();
             }
             Ragdoll body = f.body;
@@ -1533,60 +1652,68 @@ public final class Game {
         sfx(SoundFx.JUMP);
     }
 
-    /** Camera focus: follows the corpse's hips once the fighter is a ragdoll. */
+    /** Track live positions, never a corpse falling below the arena. */
     private float focusX(Fighter f) {
-        return f.body != null ? f.body.x[Ragdoll.HIPS] : f.x;
+        float x = f.down && f.body != null ? f.body.x[Ragdoll.HIPS] : f.x;
+        return Math.max(arena.bounds.left, Math.min(arena.bounds.right, x));
     }
 
     private float focusY(Fighter f) {
-        return f.body != null ? f.body.y[Ragdoll.HIPS] : f.y;
+        float y = f.down && f.body != null ? f.body.y[Ragdoll.HIPS] : f.y;
+        float floor = arena.platforms.get(0).r.top;
+        return Math.max(floor - 520f, Math.min(floor + 25f, y));
     }
 
     private void updateCamera(float dt) {
-        float sepX = Math.abs(focusX(fighters[0]) - focusX(fighters[1]));
-        float sepY = Math.abs(focusY(fighters[0]) - focusY(fighters[1]));
-        float sep = Math.max(sepX, sepY * 1.5f);
-        float t = Math.max(0f, Math.min(1f, (sep - 260f) / 900f));
-        float targetZoom = ZOOM + (ZOOM_MIN - ZOOM) * t;
-        // zoom settles faster than the pan, otherwise a knockdown is already
-        // over before the camera has widened enough to show it
-        zoom += (targetZoom - zoom) * (1f - (float) Math.pow(0.00005f, dt));
-
-        float vw = viewW / zoom;
-        float vh = viewH / zoom;
-        float tx = (focusX(fighters[0]) + focusX(fighters[1])) * 0.5f;
-        float ty = (focusY(fighters[0]) + focusY(fighters[1])) * 0.5f;
-        // When someone is on the floor - knocked down or out - lean the camera
-        // toward that body: ragdolls fly a long way, and an even midpoint left
-        // the body off-screen entirely.
-        boolean aBody = fighters[0].dead || fighters[0].down;
-        boolean bBody = fighters[1].dead || fighters[1].down;
-        if (aBody != bBody) { // exactly one fighter is on the floor
-            int body = aBody ? 0 : 1;
-            int other = 1 - body;
-            tx = focusX(fighters[body]) * 0.78f + focusX(fighters[other]) * 0.22f;
-            ty = focusY(fighters[body]) * 0.72f + focusY(fighters[other]) * 0.28f;
+        if (isFootball()) {
+            zoom = Math.min(viewW / 1560f, (viewH - 180f) / 500f);
+            camX = (Football.WIDTH - viewW / zoom) * 0.5f;
+            camY = Football.CEILING - 95f / zoom;
+            cameraReady = true;
+            return;
         }
-        float targetX = tx - vw * 0.5f;
-        float targetY = ty - vh * 0.55f;
-
-        float minX = arena.bounds.left - 40f;
-        float maxX = arena.bounds.right - vw + 40f;
-        if (maxX < minX) {
-            maxX = minX = (arena.bounds.left + arena.bounds.right - vw) * 0.5f;
+        if (arena.platforms.isEmpty()) return;
+        // Keep the last combat framing during a K.O./result. Corpses are free
+        // to fall/fade without dragging the camera out of the fighting space.
+        if (cameraReady && phase != PH_INTRO && phase != PH_FIGHT) return;
+        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 100f;
+        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 100f;
+        float minY = Math.min(focusY(fighters[0]), focusY(fighters[1])) - Fighter.HEAD - 35f;
+        float maxY = Math.max(focusY(fighters[0]), focusY(fighters[1])) + Fighter.FEET + 22f;
+        final float top = 105f, bottom = viewH - 180f;
+        float fit = Math.min((viewW - 96f) / (maxX - minX), (bottom - top) / (maxY - minY));
+        float targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM, fit));
+        if (cameraReady && dt > 0f) {
+            zoomHold = Math.max(0f, zoomHold - dt);
+            if (targetZoom < zoom - 0.07f) {
+                // Fit immediately: do not clip a fighter while slowly zooming out.
+                zoom = targetZoom;
+                zoomHold = 1.0f;
+            } else if (targetZoom > zoom + 0.12f && zoomHold <= 0f) {
+                zoom += (targetZoom - zoom) * (1f - (float) Math.exp(-2f * dt));
+            }
+        } else {
+            zoom = targetZoom;
         }
-        targetX = Math.max(minX, Math.min(maxX, targetX));
-
-        float minY = arena.bounds.top - 120f;
-        float maxY = arena.bounds.bottom - vh + 70f;
-        if (maxY < minY) {
-            maxY = minY = (arena.bounds.top + arena.bounds.bottom - vh) * 0.5f;
+        float targetX = (minX + maxX) * 0.5f - viewW / (2f * zoom);
+        float floor = arena.platforms.get(0).r.top;
+        float targetY = floor - (bottom - 20f) / zoom;
+        float low = maxY - bottom / zoom;
+        float high = minY - top / zoom;
+        targetY = Math.max(low, Math.min(high, targetY));
+        if (!cameraReady || dt <= 0f) {
+            camX = targetX;
+            camY = targetY;
+        } else {
+            float k = 1f - (float) Math.exp(-6f * dt);
+            camX += (targetX - camX) * k;
+            camY += (targetY - camY) * k;
+            // Soft follow inside a hard visibility envelope, clear of HUD/sticks.
+            camX = Math.max(maxX - (viewW - 48f) / zoom,
+                    Math.min(minX - 48f / zoom, camX));
+            camY = Math.max(low, Math.min(high, camY));
         }
-        targetY = Math.max(minY, Math.min(maxY, targetY));
-
-        float k = 1f - (float) Math.pow(0.0016f, dt);
-        camX += (targetX - camX) * k;
-        camY += (targetY - camY) * k;
+        cameraReady = true;
     }
 
     // ------------------------------------------------------------------ draw
@@ -1655,6 +1782,7 @@ public final class Game {
         c.scale(zoom, zoom);
         c.translate(-camX + shx / zoom, -camY + shy / zoom);
         drawArena(g);
+        if (isFootball()) football.draw(g);
         for (int i = 0; i < pickups.size(); i++) {
             drawPickup(g, pickups.get(i));
         }
@@ -1825,7 +1953,7 @@ public final class Game {
 
     private void drawControls(Painter g) {
         drawStick(g, stickA, 0xFF4D9BFF, fighters[0]);
-        if (mode == M_LOCAL) {
+        if (isLocal()) {
             drawStick(g, stickB, 0xFFFF6B8A, fighters[1]);
         }
 
@@ -1862,7 +1990,7 @@ public final class Game {
         if (labelY > viewH - 5f) {
             labelY = s.baseY - s.radius - 12f;
         }
-        g.textCenter(ready ? "RELEASE · SKILL" : "SKILL " + (int) (charge * 100f) + "%",
+        g.textCenter(ready ? (isFootball() ? "RELEASE · POWER KICK" : "RELEASE · SKILL") : "SKILL " + (int) (charge * 100f) + "%",
                 s.baseX, labelY, ready ? 0xFFFFD166 : 0x99FFFFFF);
     }
 
@@ -1885,7 +2013,7 @@ public final class Game {
             g.textCenter(arena.name, viewW / 2, viewH - 26, 0x99FFFFFF);
         } else if (phase == PH_ROUND_END) {
             g.size(roundDraw ? 62 : 84);
-            g.textShadowCenter(roundDraw ? "DOUBLE K.O." : "K.O.",
+            g.textShadowCenter(isFootball() ? "GOAL!" : (roundDraw ? "DOUBLE K.O." : "K.O."),
                     viewW / 2, viewH / 2, 0xFFFF6B8A, 5);
         } else if (phase == PH_BOSS_BREAK) {
             g.size(46);
@@ -1904,12 +2032,22 @@ public final class Game {
         g.rect(0, 0, viewW, 78, 0xE60A0E16);
         g.rect(0, 78, viewW, 2, 0x22FFFFFF);
         float barW = Math.min(260f, viewW * 0.26f);
-        drawHealth(g, 20, 22, barW, fighters[0], false);
-        drawHealth(g, viewW - 20 - barW, 22, barW, fighters[1], true);
+        if (isFootball()) {
+            g.size(16);
+            g.text(fighters[0].name + " · GREEN", 20, 34, 0xFF6BE88A);
+            g.text("ATTACK RIGHT GOAL", 20, 58, 0xAAFFFFFF);
+            g.align(Paint.Align.RIGHT);
+            g.text(fighters[1].name + " · YELLOW", viewW - 20, 34, 0xFFFFE52E);
+            g.text("ATTACK LEFT GOAL", viewW - 20, 58, 0xAAFFFFFF);
+            g.align(Paint.Align.LEFT);
+        } else {
+            drawHealth(g, 20, 22, barW, fighters[0], false);
+            drawHealth(g, viewW - 20 - barW, 22, barW, fighters[1], true);
+        }
 
         g.size(15);
         g.align(Paint.Align.CENTER);
-        String mid = mode == M_SURVIVAL ? "WAVE " + wave
+        String mid = isFootball() ? "FOOTBALL · FIRST TO 3" : mode == M_SURVIVAL ? "WAVE " + wave
                 : (mode == M_BOSS ? "BOSS " + (bossIndex + 1) + " / " + BOSS_NAMES.length
                 : "ROUND " + roundNumber);
         g.textCenter(mid, viewW / 2, 40, 0xCCFFFFFF);
@@ -1995,7 +2133,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.1", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.1", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2010,6 +2148,10 @@ public final class Game {
         bw = Math.min(300, Math.max(220, bw));
         bx = viewW - bw - 30;
 
+        float sportW = Math.min(290f, bx - 76f);
+        btn(g, 46, 290, sportW, 48, "FOOTBALL · VS CPU", A_FOOTBALL_CPU, 0xFF9BE86B);
+        btn(g, 46, 346, sportW, 48, "FOOTBALL · 2 PLAYERS", A_FOOTBALL_LOCAL, 0xFF51E5FF);
+
         btn(g, bx, by, bw, 52, "QUICK FIGHT", A_QUICK, 0xFFFF6B8A);
         btn(g, bx, by + 60, bw, 52, "LOCAL DUEL  ·  2P", A_LOCAL, 0xFF4D9BFF);
         btn(g, bx, by + 120, bw, 52, "SURVIVAL", A_SURVIVAL, 0xFF9BE86B);
@@ -2020,7 +2162,7 @@ public final class Game {
         btn(g, bx - 78, by + 344, 68, 44, "?", A_HOW, 0xFF8A93A8);
 
         g.size(11);
-        g.text("Tap a mode to pick your arena", 48, viewH - 24, 0x66FFFFFF);
+        g.text("Duels, survival and football · offline", 48, viewH - 24, 0x66FFFFFF);
         c.restore();
     }
 
@@ -2283,6 +2425,7 @@ public final class Game {
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins · a double K.O. replays without a point",
                 "Boss Tournament: defeat five escalating opponents and recover between fights",
+                "Football: first to 3 goals · contact kicks · release near the ball for a power kick",
         };
         g.size(14);
         for (int i = 0; i < lines.length; i++) {
@@ -2311,7 +2454,7 @@ public final class Game {
         float bw = pw - 60;
         btn(g, bx, py + 82, bw, 48, "RESUME", A_RESUME, 0xFF9BE86B);
         btn(g, bx, py + 138, bw, 48, "RESTART", A_RESTART, 0xFF4D9BFF);
-        btn(g, bx, py + 194, bw, 48, "CHANGE ARENA", A_MAPS_FROM_PAUSE, 0xFF7D8BFF);
+        btn(g, bx, py + 194, bw, 48, isFootball() ? "RESET PITCH" : "CHANGE ARENA", A_MAPS_FROM_PAUSE, 0xFF7D8BFF);
         btn(g, bx, py + 250, bw, 48, "QUIT TO MENU", A_QUIT, 0xFFFF6B8A);
         c.restore();
     }
@@ -2431,6 +2574,22 @@ public final class Game {
     boolean debugUseAbility(int i, float dx, float dy) {
         return useAbility(fighters[i], dx, dy);
     }
+
+    void debugSeed(long seed) { rnd.setSeed(seed); cpu.seed(seed); }
+
+    float[] debugCamera() { return new float[] { camX, camY, zoom }; }
+
+    void debugStepRagdolls(float dt) { updateRagdolls(dt); }
+
+    Football debugFootball() { return football; }
+
+    boolean debugPaused() { return paused; }
+
+    void debugAddShot(Projectile shot) { shots.add(shot); }
+
+    void debugUpdateShots(float dt) { updateShots(dt); }
+
+    void debugSetArena(Maps.Arena value) { arena = value; }
 
     int debugShotCount() {
         return shots.size();

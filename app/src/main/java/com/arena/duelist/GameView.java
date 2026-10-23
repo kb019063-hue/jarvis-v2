@@ -3,6 +3,7 @@ package com.arena.duelist;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.view.MotionEvent;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
@@ -19,6 +20,7 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
     private GameThread thread;
     private final Game game;
     private volatile boolean running;
+    private boolean foreground;
 
     public GameView(Context context) {
         super(context);
@@ -50,7 +52,13 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        if (running) {
+        if (!foreground || running || !holder.getSurface().isValid()) {
+            return;
+        }
+        if (thread != null && thread.isAlive()) {
+            // A slow surface unlock must finish before another loop can own it.
+            removeCallbacks(retryStart);
+            postDelayed(retryStart, 32);
             return;
         }
         running = true;
@@ -71,10 +79,31 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
     public void stopLoop() {
         running = false;
         GameThread t = thread;
-        thread = null;
+        removeCallbacks(retryStart);
         if (t != null) {
             t.quit();
+            t.interrupt();
+            try {
+                t.join(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            if (!t.isAlive()) {
+                thread = null;
+            } else {
+                Log.w("StickDuelist", "Waiting for previous surface loop to terminate");
+            }
         }
+    }
+
+    private final Runnable retryStart = new Runnable() {
+        @Override public void run() { reacquire(); }
+    };
+
+    public void pauseLoop() {
+        foreground = false;
+        game.suspend();
+        stopLoop();
     }
 
     @Override
@@ -135,7 +164,7 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                 last = now;
                 accumulator += Math.min(elapsed, 0.10f);
                 int steps = 0;
-                while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+                while (alive && running && accumulator >= FIXED_DT && steps < MAX_STEPS) {
                     game.tick(FIXED_DT);
                     accumulator -= FIXED_DT;
                     steps++;
@@ -145,20 +174,23 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                     accumulator = 0f;
                 }
 
+                if (!alive || !running) break;
                 Canvas c = null;
                 try {
                     c = holder.lockCanvas();
                     if (c != null) {
                         synchronized (holder) {
-                            game.draw(c);
+                            if (alive && running) game.draw(c);
                         }
                     }
-                } catch (Throwable ignored) {
+                } catch (IllegalArgumentException | IllegalStateException e) {
+                    Log.w("StickDuelist", "Surface unavailable during rendering", e);
                 } finally {
                     if (c != null) {
                         try {
                             holder.unlockCanvasAndPost(c);
-                        } catch (Throwable ignored) {
+                        } catch (IllegalArgumentException | IllegalStateException e) {
+                            Log.w("StickDuelist", "Surface unavailable during posting", e);
                         }
                     }
                 }
@@ -181,8 +213,16 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
         return game;
     }
 
+    public void resumeLoop() {
+        foreground = true;
+        reacquire();
+    }
+
     /** Called on resume: restart the loop if the surface is still alive. */
     public void reacquire() {
+        if (!foreground) {
+            return;
+        }
         if (!running && getHolder().getSurface().isValid()) {
             surfaceCreated(getHolder());
         }
