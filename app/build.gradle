@@ -36,6 +36,14 @@ android {
     }
 }
 
+tasks.withType(Test).configureEach {
+    systemProperty 'screenshot.dir', layout.buildDirectory.dir('screenshots').get().asFile.absolutePath
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+}
+
 dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'

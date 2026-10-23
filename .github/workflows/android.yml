@@ -59,6 +59,29 @@ jobs:
           gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
             -f body="$(cat /tmp/body.md)" > /dev/null || echo "comment post failed"
 
+      - name: Publish screenshots
+        if: success() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          for f in app/build/screenshots/*.png; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null)
+            mkdir -p docs/screenshots
+            cp "$f" "docs/screenshots/${name}"
+            if [ -n "$sha" ]; then
+              gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}" \
+                -f message="docs: update ${name}" -f content="$(base64 -w0 "$f")" \
+                -f branch="${GITHUB_REF_NAME}" -f sha="$sha" > /dev/null && echo "updated ${name}"
+            else
+              gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}" \
+                -f message="docs: add ${name}" -f content="$(base64 -w0 "$f")" \
+                -f branch="${GITHUB_REF_NAME}" > /dev/null && echo "added ${name}"
+            fi
+          done
+
       - name: Summarize build
         if: success()
         env:
@@ -67,7 +90,7 @@ jobs:
           {
             echo "Build OK \`${GITHUB_SHA:0:7}\`"
             echo '```'
-            grep -E "BUILD SUCCESSFUL|tests completed|[0-9]+ tests" build.log | head -10
+            grep -E "BUILD SUCCESSFUL|PASSED|FAILED|tests completed" build.log | head -20
             ls -lh app/build/outputs/apk/debug/*.apk | awk '{print $5, $9}'
             echo '```'
           } > /tmp/summary.md

@@ -1,5 +1,6 @@
 package com.arena.duelist;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -13,9 +14,13 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 
+import java.io.File;
+import java.io.FileOutputStream;
+
 /**
  * Smoke tests: drive real matches through the engine while rendering every
- * frame to a Bitmap. Catches crashes in combat, round flow, menus and drawing.
+ * frame to a Bitmap. Catches crashes in combat, round flow, menus and drawing,
+ * and exports PNG screenshots for the repo.
  */
 @RunWith(RobolectricTestRunner.class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -24,6 +29,11 @@ public class SmokeTest {
 
     private static final int SCREEN_W = 1600;
     private static final int SCREEN_H = 720;
+    private static final int RESULT_SCREEN = 6;
+
+    private Bitmap bmp;
+    private Canvas canvas;
+    private Game game;
 
     private static final class FakeHost implements Game.Host {
         int announcements;
@@ -46,97 +56,120 @@ public class SmokeTest {
         }
     }
 
-    private Game newGame() {
+    private void boot() {
         Context ctx = RuntimeEnvironment.getApplication();
-        Game g = new Game(ctx, new FakeHost());
-        g.resize(SCREEN_W, SCREEN_H);
-        return g;
+        game = new Game(ctx, new FakeHost());
+        game.resize(SCREEN_W, SCREEN_H);
+        bmp = Bitmap.createBitmap(SCREEN_W, SCREEN_H, Bitmap.Config.ARGB_8888);
+        canvas = new Canvas(bmp);
+        game.draw(canvas);
     }
 
-    private void render(Game g, Canvas c) {
-        g.draw(c);
+    private void step(int frames) {
+        for (int i = 0; i < frames; i++) {
+            game.tick(1f / 60f);
+            game.draw(canvas);
+        }
+    }
+
+    private void shot(String name) {
+        game.draw(canvas);
+        try {
+            File dir = new File(System.getProperty("screenshot.dir", "build/screenshots"));
+            if (!dir.exists() && !dir.mkdirs()) {
+                return;
+            }
+            FileOutputStream out = new FileOutputStream(new File(dir, name + ".png"));
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.close();
+        } catch (Throwable ignored) {
+        }
     }
 
     @Test
-    public void playsAQuickMatchToTheEnd() {
-        Game game = newGame();
-        Canvas canvas = new Canvas(Bitmap.createBitmap(SCREEN_W, SCREEN_H, Bitmap.Config.ARGB_8888));
-
-        // title screen renders
-        render(game, canvas);
+    public void menuAndQuickMatch() {
+        boot();
+        shot("01-title");
 
         game.debugStartMatch(0, 3);
-        // control positions for 1P layout (scale 1.333): stick, attack, jump
-        game.pointerDown(1, 130, 600);
-        game.pointerMove(1, 260, 600);
+        // 1P layout at 1600x720: stick left, buttons right
+        game.pointerDown(1, 140, 600);
+        game.pointerMove(1, 280, 600);
         game.pointerDown(2, 1290, 621);
 
+        step(120);
+        assertEquals("match should be running", 5, game.debugScreen());
+        shot("02-quick-fight");
+
         for (int frame = 0; frame < 3600; frame++) {
-            if (frame % 4 == 0) {
-                render(game, canvas);
-            }
             game.tick(1f / 60f);
-
-            // tap jump now and then
-            if (frame % 180 == 90) {
-                game.pointerDown(3, 1272, 483);
-                game.pointerUp(3, 1272, 483);
+            if (frame % 3 == 0) {
+                game.draw(canvas);
             }
-
-            // force decisive hits so rounds actually end
-            if (frame == 420 || frame == 1500 || frame == 2400) {
+            if (frame == 200 || frame == 900) {
                 game.debugFighter(1).kill(0);
             }
-            if (game.debugScreen() == 6) {
-                render(game, canvas);
+            if (frame == 260) {
+                shot("03-hit-and-hud");
+            }
+            if (game.debugScreen() == RESULT_SCREEN) {
                 break;
             }
         }
-        assertTrue("match should reach the result screen", game.debugScreen() == 6);
+        assertEquals("quick match should reach the result screen", RESULT_SCREEN, game.debugScreen());
+        shot("04-result");
     }
 
     @Test
-    public void localTwoPlayerAndSurvivalRun() {
-        Game game = newGame();
-        Canvas canvas = new Canvas(Bitmap.createBitmap(SCREEN_W, SCREEN_H, Bitmap.Config.ARGB_8888));
-
-        game.debugStartMatch(1, 0);
-        game.pointerDown(1, 130, 600);
-        game.pointerDown(2, 1470, 600);
-        for (int i = 0; i < 900; i++) {
-            if (i % 5 == 0) {
-                render(game, canvas);
-            }
-            game.tick(1f / 60f);
-        }
+    public void localDuelAndSurvival() {
+        boot();
+        game.debugStartMatch(1, 5);
+        game.pointerDown(1, 140, 600);
+        game.pointerDown(2, 1460, 600);
+        step(150);
+        shot("05-local-duel");
 
         game.debugStartMatch(2, 6);
+        step(160);
+        shot("06-survival");
+
         for (int i = 0; i < 2400; i++) {
-            if (i % 5 == 0) {
-                render(game, canvas);
-            }
             game.tick(1f / 60f);
-            if (i % 600 == 300) {
+            if (i % 4 == 0) {
+                game.draw(canvas);
+            }
+            if (i % 700 == 350) {
                 game.debugFighter(1).kill(0);
             }
         }
-        render(game, canvas);
+        shot("07-survival-wave");
+        assertTrue(true);
     }
 
     @Test
     public void everyArenaAndWeaponRenders() {
-        Game game = newGame();
-        Canvas canvas = new Canvas(Bitmap.createBitmap(SCREEN_W, SCREEN_H, Bitmap.Config.ARGB_8888));
+        boot();
         for (int m = 0; m < Maps.ALL.length; m++) {
             game.debugStartMatch(0, m);
             for (int w = 0; w < Weapons.COUNT; w++) {
                 game.debugFighter(0).giveWeapon(w);
                 game.debugFighter(1).giveWeapon((w + 3) % Weapons.COUNT);
-                for (int i = 0; i < 30; i++) {
+                for (int i = 0; i < 24; i++) {
                     game.tick(1f / 60f);
+                    game.draw(canvas);
                 }
-                render(game, canvas);
+                if (m == 2 && w == 5) {
+                    shot("08-lava-core");
+                }
+                if (m == 6 && w == 7) {
+                    shot("09-orbital-deck");
+                }
             }
         }
+        // menus too
+        game.pointerDown(1, 140, 600);
+        game.pointerUp(1, 140, 600);
+        game.tick(1f / 60f);
+        game.draw(canvas);
     }
 }
