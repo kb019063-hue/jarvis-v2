@@ -424,11 +424,11 @@ public final class Fighter {
         float neckY = -24f;
         float hipY = 12f;
 
-        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 16f : 8f);
-        float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 16f : 8f);
+        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 12f : 6f);
+        float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 12f : 6f);
         if (!onGround && !dead) {
-            legSwing = -14f;
-            legSwing2 = 10f;
+            legSwing = -10f;
+            legSwing2 = 8f;
         }
 
         float shoulderY = neckY + 8f;
@@ -448,9 +448,10 @@ public final class Fighter {
             handYr = shoulderY + 20f;
         }
 
-        // limbs, drawn twice: outline pass then body pass
-        limb(g, HALF_W * 0.36f, hipY, HALF_W * 0.36f + legSwing, FEET, 7f, bodyColor, outline);
-        limb(g, -HALF_W * 0.36f, hipY, -HALF_W * 0.36f + legSwing2, FEET, 7f, bodyColor, outline);
+        // legs: hip -> knee -> foot, with a knee that bends while moving
+        float kneeY = hipY + (FEET - hipY) * 0.52f;
+        leg(g, hipY, kneeY, legSwing, 1, bodyColor, outline);
+        leg(g, hipY, kneeY, legSwing2, -1, bodyColor, outline);
         limb(g, 0, neckY, 0, hipY, 7f, bodyColor, outline);
         limb(g, 0, shoulderY, -facing * 8f, shoulderY + 18f, 6f, bodyColor, outline);
         limb(g, 0, shoulderY, handXr, handYr, 6f, bodyColor, outline);
@@ -482,6 +483,16 @@ public final class Fighter {
             g.rrect(x - w / 2, y - HEAD - 34f, w * (health / maxHealth), 5f, 2.5f,
                     health > 50 ? 0xFF7BFF9E : (health > 25 ? 0xFFFFD166 : 0xFFFF5D5D));
         }
+    }
+
+    private void leg(Painter g, float hipY, float kneeY, float swing, int side,
+                     int body, int outline) {
+        float hipX = side * HALF_W * 0.34f;
+        float kneeX = hipX + swing * 0.55f + side * 2f;
+        float footX = kneeX + swing * 0.5f;
+        limb(g, hipX, hipY, kneeX, kneeY, 7f, body, outline);
+        limb(g, kneeX, kneeY, footX, FEET, 6.4f, body, outline);
+        limb(g, footX - 2f, FEET, footX + 7f, FEET, 5f, body, outline);
     }
 
     private void limb(Painter g, float x1, float y1, float x2, float y2, float w,

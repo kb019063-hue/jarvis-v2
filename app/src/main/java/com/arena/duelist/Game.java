@@ -110,7 +110,7 @@ public final class Game {
     private float viewW = 960f;
     private float viewH = 540f;
     private float camX, camY;
-    private static final float ZOOM = 1.42f;
+    private static final float ZOOM = 1.55f;
     private float shake;
     private float hitStop;
     private float time;
@@ -1203,10 +1203,12 @@ public final class Game {
                 }
             }
         } else if (arenaIndex == 5) {
-            for (int i = 0; i < 18; i++) {
-                float x = i * 110f - 40f;
-                g.rect(x, baseY - 300, 14, 300, Painter.withAlpha(deco, 120));
-                g.circle(x + 7, baseY - 300, 34, Painter.withAlpha(deco, 110));
+            for (int i = 0; i < 20; i++) {
+                float x = i * 105f - 40f + (i % 3) * 14;
+                g.rect(x, baseY - 360, 15, 360, 0xFF2E5A32);
+                g.rect(x + 3, baseY - 360, 5, 360, 0xFF4E8A46);
+                g.circle(x + 7, baseY - 366, 40, 0xFF2E5A32);
+                g.circle(x + 4, baseY - 372, 26, 0xFF3E7440);
             }
         } else if (arenaIndex == 6) {
             for (int i = 0; i < 40; i++) {
@@ -1399,7 +1401,7 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         introShake = 0;
-        g.rect(0, 0, viewW, 78, 0x66060A12);
+        g.rect(0, 0, viewW, 78, 0xE60A0E16);
         g.rect(0, 78, viewW, 2, 0x22FFFFFF);
         float barW = Math.min(260f, viewW * 0.26f);
         drawHealth(g, 20, 22, barW, fighters[0], false);
