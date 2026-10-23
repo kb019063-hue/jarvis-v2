@@ -31,7 +31,7 @@ public final class Profile {
         losses = sp.getInt("losses", 0);
         bestStreak = sp.getInt("streak", 0);
         streak = sp.getInt("curstreak", 0);
-        skinColor = sp.getInt("skin", 0xFFF2F2F2);
+        skinColor = sp.getInt("skin", 0xFF48E879);
         hairStyle = sp.getInt("hair", 0);
         starter = sp.getInt("starter", 0);
         gravity = sp.getBoolean("gravity", true);

@@ -82,7 +82,14 @@ public final class SoundFx {
 
     private static final int RATE = 22050;
 
-    private static short[] build(int id) {
+    /** Convert a normalized floating-point sample to signed 16-bit PCM. */
+    private static short pcm16(double sample) {
+        double clamped = Math.max(-1.0, Math.min(1.0, sample));
+        return (short) Math.round(clamped * 32767.0);
+    }
+
+    // Package-private so the audio format can be covered by a unit test.
+    static short[] build(int id) {
         switch (id) {
             case HIT:
                 return noiseBurst(0.16f, 900f, 0.9f, true);
@@ -111,7 +118,7 @@ public final class SoundFx {
             phase += 2 * Math.PI * f / RATE;
             double env = Math.pow(1 - t, 1.7);
             double s = Math.signum(Math.sin(phase)) * 0.55 + Math.sin(phase) * 0.45;
-            out[i] = (short) (s * env * amp * 32767);
+            out[i] = pcm16(s * env * amp);
         }
         return out;
     }
@@ -131,7 +138,7 @@ public final class SoundFx {
             double body = thump ? Math.sin(phase) * 0.8 : 0;
             double s = lp * 0.85 + body;
             s = s * env * amp;
-            out[i] = (short) Math.max(-1, Math.min(1, s) * 32767);
+            out[i] = pcm16(s);
         }
         return out;
     }
@@ -148,7 +155,7 @@ public final class SoundFx {
             phase += 2 * Math.PI * (110 - 70 * t) / RATE;
             lp += ((r.nextFloat() * 2 - 1) - lp) * 0.12f;
             double s = Math.sin(phase) * 0.8 + lp * 0.5;
-            out[i] = (short) Math.max(-1, Math.min(1, s * env) * 32767);
+            out[i] = pcm16(s * env);
         }
         return out;
     }
@@ -161,7 +168,7 @@ public final class SoundFx {
             double f = t < 0.5 ? 880 : 1320;
             double env = Math.exp(-t * 4.5);
             double s = Math.sin(2 * Math.PI * f * i / RATE) * env * 0.35;
-            out[i] = (short) (s * 32767);
+            out[i] = pcm16(s);
         }
         return out;
     }

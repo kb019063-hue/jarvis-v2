@@ -39,6 +39,17 @@ public final class Weapons {
     }
 
     public static final int FIST = 0;
+    public static final int SWORD = 1;
+    public static final int SPEAR = 2;
+    public static final int DUAL_SABERS = 3;
+    public static final int KUNAI = 4;
+    public static final int HAMMER = 5;
+    public static final int BOW = 6;
+    public static final int WAND = 7;
+    public static final int BOMB = 8;
+    public static final int BOOMERANG = 9;
+    public static final int PISTOL = 10;
+    public static final int ENERGY_BLADE = 11;
 
     public static final Def[] DEFS = {
             new Def("Fists", MELEE, 8f, 36f, 0.28f, 250f, 0xFFE8E8E8, 0, 0, -1, 0,

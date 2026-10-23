@@ -14,8 +14,10 @@ public final class Fighter {
     /** How fast a hit reaction wears off (per second). */
     private static final float LIMP_RECOVER = 2.2f;
     public static final float FEET = 30f;
-    public static final float HEAD = 30f;
-    public static final float HEIGHT = 96f;
+    public static final float HEAD = 30f; // collision/AI clearance, not the drawn head radius
+    public static final float CROUCH_HEAD = 18f;
+    public static final float HEAD_RADIUS = 8.5f;
+    public static final float HEIGHT = 64f;
 
     public final int id;
     public String name;
@@ -43,6 +45,9 @@ public final class Fighter {
     public float aimX = 1f, aimY = 0f;
     /** World-space weapon direction, shared by drawing and hit detection. */
     public float weaponAngle;
+    /** Previous rendered weapon segment, used to sweep fast melee swings. */
+    float prevWeaponHandX, prevWeaponHandY, prevWeaponTipX, prevWeaponTipY;
+    boolean prevWeaponPoseValid;
     /** Remaining seconds before the release-triggered weapon skill is ready. */
     public float abilityT;
     public float moveX;
@@ -111,7 +116,7 @@ public final class Fighter {
     private final float[] poseY = new float[Ragdoll.N];
     private float wobVx, wobVy;
 
-    public int color = 0xFFF2F2F2;
+    public int color = 0xFF48E879;
     public int accent = 0xFFFF4D6D;
     public int hair;
 
@@ -151,8 +156,38 @@ public final class Fighter {
     }
 
     public float weaponReach() {
-        return Weapons.DEFS[weapon].type == Weapons.MELEE
-                ? Weapons.DEFS[weapon].reach : 0f;
+        if (Weapons.DEFS[weapon].type != Weapons.MELEE) {
+            return 0f;
+        }
+        // The fist's reach is already mostly represented by the animated arm;
+        // using its catalogue reach as an extra blade length made invisible hits.
+        return weapon == Weapons.FIST ? 6f : Weapons.DEFS[weapon].reach;
+    }
+
+    /** Weapon follows the forearm when an impact has pushed the body off-pose. */
+    public float currentWeaponAngle() {
+        if (body == null || (!dead && !down && limp < 0.25f)) {
+            return weaponAngle;
+        }
+        float dx = body.x[Ragdoll.HAND_R] - body.x[Ragdoll.ELBOW_R];
+        float dy = body.y[Ragdoll.HAND_R] - body.y[Ragdoll.ELBOW_R];
+        if (dx * dx + dy * dy < 4f) {
+            return weaponAngle;
+        }
+        return (float) Math.atan2(dy, dx);
+    }
+
+    /** Keep one frame of the drawn blade so combat can test its swept arc. */
+    private void captureWeaponPose() {
+        prevWeaponPoseValid = body != null;
+        if (!prevWeaponPoseValid) {
+            return;
+        }
+        prevWeaponHandX = body.x[Ragdoll.HAND_R];
+        prevWeaponHandY = body.y[Ragdoll.HAND_R];
+        float angle = currentWeaponAngle();
+        prevWeaponTipX = prevWeaponHandX + (float) Math.cos(angle) * weaponReach();
+        prevWeaponTipY = prevWeaponHandY + (float) Math.sin(angle) * weaponReach();
     }
 
     /** Queue input for this frame (called by human controls or CPU). */
@@ -176,6 +211,7 @@ public final class Fighter {
             // unusable, especially on Rooftop Dusk.
             vy = -850f;
             onGround = false;
+            crouch = false;
             coyote = 0f;
         }
     }
@@ -298,6 +334,19 @@ public final class Fighter {
         attackT = attackDur;
         cooldown = d.cooldown;
         hitThisSwing = false;
+
+        // A small, weapon-weighted step makes close combat feel committed instead
+        // of like a stationary arm animation. Release skills set swingBoost first
+        // and supply their own (larger) dash, so they are not double-accelerated.
+        if (d.type == Weapons.MELEE && swingBoost <= 0f) {
+            float aimLen = (float) Math.sqrt(aimX * aimX + aimY * aimY);
+            float dirX = aimLen < 0.2f ? facing : aimX / aimLen;
+            float lunge = weapon == Weapons.SPEAR ? 92f
+                    : (weapon == Weapons.SWORD || weapon == Weapons.ENERGY_BLADE ? 72f
+                    : (weapon == Weapons.FIST ? 58f
+                    : (weapon == Weapons.HAMMER ? 28f : 46f)));
+            vx += dirX * lunge;
+        }
     }
 
     public boolean meleeActive() {
@@ -307,11 +356,11 @@ public final class Fighter {
 
     /** Current physical weapon tip, used by the melee contact test. */
     public float tipX() {
-        return handX() + (float) Math.cos(weaponAngle) * weaponReach();
+        return handX() + (float) Math.cos(currentWeaponAngle()) * weaponReach();
     }
 
     public float tipY() {
-        return handY() + (float) Math.sin(weaponAngle) * weaponReach();
+        return handY() + (float) Math.sin(currentWeaponAngle()) * weaponReach();
     }
 
     public void update(float dt, Maps.Arena arena, boolean gravityOn, boolean shieldAllowed) {
@@ -321,6 +370,7 @@ public final class Fighter {
     /** Updates the fighter, optionally freezing all player/CPU actions. */
     public void update(float dt, Maps.Arena arena, boolean gravityOn, boolean shieldAllowed,
                        boolean inputAllowed) {
+        captureWeaponPose();
         anim += dt;
         if (spawnT > 0) {
             spawnT -= dt;
@@ -454,16 +504,14 @@ public final class Fighter {
                 vy = 1500f;
             }
         } else {
-            vy += 120f * dt;
-            vy *= 0.985f;
-            vx *= 0.985f;
-            if (vy > 220f) {
-                vy = 220f;
-            }
+            // Gravity OFF is true zero-G. Keep a little air friction, but do not
+            // continue adding downward acceleration under a misleading toggle.
+            vy *= 0.995f;
+            vx *= 0.995f;
         }
 
         prevBottom = y + FEET;
-        prevTop = y - HEAD;
+        prevTop = y - headExtent();
         x += vx * dt;
         y += vy * dt;
 
@@ -492,19 +540,22 @@ public final class Fighter {
             vx = Math.min(0, vx);
         }
 
-        updateBody(dt, arena);
+        updateBody(dt, arena, gravityOn);
     }
 
     /** Steps the active ragdoll for a standing fighter: physics + pose muscle. */
-    private void updateBody(float dt, Maps.Arena arena) {
+    private void updateBody(float dt, Maps.Arena arena, boolean gravityOn) {
         if (body == null) {
             body = new Ragdoll(this);
         }
+        body.facing = facing;
+        body.hair = hair;
+        body.accent = accent;
         poseNow();
         // muscle: 1 when composed, near 0 when freshly smashed. Squaring makes
         // light hits flinch and heavy ones genuinely flop.
         float muscle = (1f - limp) * (1f - limp);
-        body.update(dt, arena, poseX, poseY, muscle, 0.4f);
+        body.update(dt, arena, poseX, poseY, muscle, gravityOn ? 0.4f : 0f);
     }
 
     /**
@@ -514,19 +565,24 @@ public final class Fighter {
      */
     private void poseNow() {
         float squash = (crouch && onGround && !dead) ? 0.72f : 1f;
-        float headR = 13f;
-        float neckY = -24f;
-        float hipY = 12f;
-        float shoulderY = neckY + 8f;
-        float armLen = 22f;
+        float stride = Math.min(1f, Math.abs(vx) / 240f);
+        float bob = onGround && !dead
+                ? Math.abs((float) Math.sin(walkPhase * 2f)) * 2.1f * stride : 0f;
+        float neckY = -20f - bob * 0.7f;
+        float hipY = 6f - bob * 0.3f;
+        float shoulderY = neckY + 7f;
+        float armLen = 24f;
 
-        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 12f : 6f);
-        float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 12f : 6f);
+        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 15f : 6f) * stride;
+        float legSwing2 = (float) Math.sin(walkPhase + (float) Math.PI)
+                * (onGround ? 15f : 6f) * stride;
         if (!onGround && !dead) {
             legSwing = -10f;
             legSwing2 = 8f;
         }
 
+        float lean = Math.max(-1f, Math.min(1f, vx / 360f)) * 3.5f;
+        float shoulderX = lean + (float) Math.sin(walkPhase) * 1.2f * stride;
         float aimLength = (float) Math.sqrt(aimX * aimX + aimY * aimY);
         float baseAngle = aimLength < 0.2f
                 ? (facing >= 0 ? 0f : (float) Math.PI)
@@ -535,39 +591,93 @@ public final class Fighter {
 
         float handXr;
         float handYr;
+        float attackLean = 0f;
         if (shieldOn) {
-            handXr = (float) Math.cos(baseAngle) * 16f;
+            handXr = shoulderX + (float) Math.cos(baseAngle) * 16f;
             handYr = shoulderY + 4f + (float) Math.sin(baseAngle) * 12f;
         } else if (attacking) {
-            float t = 1f - Math.max(0f, attackT) / attackDur;
-            // The arm and weapon share this angle with the combat collision
-            // test: the visible blade is finally the thing that can hit.
-            weaponAngle = baseAngle + (t - 0.5f) * 2.6f;
-            handXr = armLen * (float) Math.cos(weaponAngle);
+            float progress = 1f - Math.max(0f, Math.min(1f, attackT / attackDur));
+            float windup = 1f - smoothstep(0f, 0.24f, progress);
+            float strike = smoothstep(0.18f, 0.50f, progress);
+            float follow = 1f - smoothstep(0.58f, 1f, progress);
+            float sign = facing >= 0 ? 1f : -1f;
+            float offset;
+
+            if (Weapons.DEFS[weapon].type != Weapons.MELEE) {
+                // Ranged attacks still show a readable aim with a small recoil.
+                offset = -sign * 0.12f * windup;
+                armLen += -3f * windup + 2f * strike * follow;
+            } else {
+                switch (weapon) {
+                    case Weapons.FIST:
+                        offset = sign * (-0.10f * windup + 0.10f * strike * follow);
+                        armLen += -5f * windup + 13f * strike * follow;
+                        attackLean = sign * (0.35f * strike * follow - 0.14f * windup);
+                        break;
+                    case Weapons.SPEAR:
+                        offset = sign * (-0.06f * windup + 0.06f * strike * follow);
+                        armLen += -8f * windup + 19f * strike * follow;
+                        attackLean = sign * (0.72f * strike * follow - 0.24f * windup);
+                        break;
+                    case Weapons.DUAL_SABERS:
+                        offset = sign * (-0.62f * windup + 2.45f * strike * follow);
+                        armLen += 2f * strike * follow;
+                        attackLean = sign * 0.3f * strike * follow;
+                        break;
+                    case Weapons.HAMMER:
+                        offset = sign * (-1.08f * windup + 1.48f * strike * follow);
+                        armLen += -3f * windup + 4f * strike * follow;
+                        attackLean = sign * (0.55f * strike * follow - 0.20f * windup);
+                        break;
+                    case Weapons.ENERGY_BLADE:
+                        offset = sign * (-0.92f * windup + 1.38f * strike * follow);
+                        armLen += -2f * windup + 5f * strike * follow;
+                        attackLean = sign * 0.42f * strike * follow;
+                        break;
+                    default: // Sword and other melee weapons: wind up, slash, recover
+                        offset = sign * (-0.82f * windup + 1.28f * strike * follow);
+                        armLen += -2f * windup + 5f * strike * follow;
+                        attackLean = sign * 0.36f * strike * follow;
+                        break;
+                }
+            }
+
+            shoulderX += attackLean;
+            weaponAngle = baseAngle + offset;
+            handXr = shoulderX + armLen * (float) Math.cos(weaponAngle);
             handYr = shoulderY + armLen * (float) Math.sin(weaponAngle);
         } else {
-            handXr = armLen * 0.72f * (float) Math.cos(baseAngle);
-            handYr = shoulderY + 8f + armLen * 0.72f * (float) Math.sin(baseAngle);
+            handXr = shoulderX + armLen * 0.76f * (float) Math.cos(baseAngle);
+            handYr = shoulderY + 9f + armLen * 0.76f * (float) Math.sin(baseAngle);
         }
 
-        float nkX = wobX;
+        float nkX = wobX + lean * 1.35f + attackLean * 0.32f;
         float nkY = neckY + wobY;
-
         pose(Ragdoll.HIPS, 0f, hipY, squash);
-        pose(Ragdoll.CHEST, 0f, shoulderY, squash);
-        pose(Ragdoll.HEAD, nkX, nkY - headR + 4f, squash);
+        pose(Ragdoll.CHEST, shoulderX, shoulderY, squash);
+        pose(Ragdoll.HEAD, nkX, nkY - HEAD_RADIUS + 4f, squash);
 
-        // back arm and weapon arm, with elbows held half way out
-        arm(Ragdoll.ELBOW_L, Ragdoll.HAND_L, 0f, shoulderY, -facing * 8f, shoulderY + 18f, squash);
-        arm(Ragdoll.ELBOW_R, Ragdoll.HAND_R, 0f, shoulderY, handXr, handYr, squash);
+        float armSwing = (float) Math.sin(walkPhase + (float) Math.PI) * 6f * stride;
+        float armBob = (float) Math.cos(walkPhase + (float) Math.PI) * 1.5f * stride;
+        arm(Ragdoll.ELBOW_L, Ragdoll.HAND_L,
+                shoulderX, shoulderY,
+                shoulderX - facing * 10f + armSwing, shoulderY + 15f + armBob, squash);
+        arm(Ragdoll.ELBOW_R, Ragdoll.HAND_R,
+                shoulderX, shoulderY, handXr, handYr, squash);
 
         legPose(Ragdoll.KNEE_L, Ragdoll.FOOT_L, legSwing, 1, hipY, squash);
         legPose(Ragdoll.KNEE_R, Ragdoll.FOOT_R, legSwing2, -1, hipY, squash);
     }
 
+    private static float smoothstep(float a, float b, float value) {
+        float t = Math.max(0f, Math.min(1f, (value - a) / (b - a)));
+        return t * t * (3f - 2f * t);
+    }
+
     private void pose(int i, float lx, float ly, float squash) {
         poseX[i] = x + lx;
-        poseY[i] = y + ly * squash;
+        // Squash around the feet so crouching never makes the soles float.
+        poseY[i] = y + FEET + (ly - FEET) * squash;
     }
 
     private void arm(int elbow, int hand, float sx, float sy, float hx, float hy, float squash) {
@@ -589,9 +699,14 @@ public final class Fighter {
     /** Set for one frame when the fighter touches down; consumed by Game. */
     public boolean landed;
 
+    private float headExtent() {
+        return crouch ? CROUCH_HEAD : HEAD;
+    }
+
     private void collide(Maps.Arena arena, float dt) {
         float bottom = y + FEET;
-        float top = y - HEAD;
+        float head = headExtent();
+        float top = y - head;
         float left = x - HALF_W;
         float right = x + HALF_W;
 
@@ -608,13 +723,13 @@ public final class Fighter {
                 onGround = true;
                 prevBottom = y + FEET;
                 bottom = y + FEET;
-                top = y - HEAD;
+                top = y - head;
                 continue;
             }
             if (!oneWay && overlapX && vy < 0 && prevTop >= r.bottom - 8 && top <= r.bottom) {
-                y = r.bottom + HEAD;
+                y = r.bottom + head;
                 vy = 40;
-                top = y - HEAD;
+                top = y - head;
                 bottom = y + FEET;
                 continue;
             }
@@ -659,6 +774,7 @@ public final class Fighter {
         cooldown = 0;
         abilityT = 0f;
         weaponAngle = facing >= 0 ? 0f : (float) Math.PI;
+        prevWeaponPoseValid = false;
         hurtT = 0;
         spawnT = 0.9f;
         flashT = 0;
@@ -680,7 +796,7 @@ public final class Fighter {
         walkPhase = 0f;
         swingBoost = 0f;
         prevBottom = y + FEET;
-        prevTop = y - HEAD;
+        prevTop = y - headExtent();
     }
 
     // ---------------------------------------------------------------- drawing
@@ -695,204 +811,115 @@ public final class Fighter {
         drawBody(g);
     }
 
-    /**
-     * Draws the stickman straight from the simulated joints, so limbs trail and
-     * flop on a hit instead of following a canned pose.
-     */
+    /** Draw the shared clean stickman model from either live or pose joints. */
     private void drawBody(Painter g) {
-        float squash = (crouch && onGround && !dead) ? 0.72f : 1f;
-
-        int bodyColor = color;
-        if (flashT > 0) {
-            bodyColor = 0xFFFFFFFF;
-        }
-        boolean ghost = spawnT > 0 && ((int) (spawnT * 20) % 2 == 0);
+        int bodyColor = flashT > 0f ? 0xFFFFFFFF : color;
+        boolean ghost = spawnT > 0f && ((int) (spawnT * 20f) % 2 == 0);
+        int outline = outlineColor(bodyColor);
         if (ghost) {
             g.alpha(120);
         }
-        int outline = luminance(bodyColor) > 0.55f ? 0x66000000 : 0x66FFFFFF;
-
-        float cx = body.x[Ragdoll.CHEST];
-        float cy = body.y[Ragdoll.CHEST];
-        float hx = body.x[Ragdoll.HIPS];
-        float hy = body.y[Ragdoll.HIPS];
-        float nx = body.x[Ragdoll.HEAD];
-        float ny = body.y[Ragdoll.HEAD];
-        boolean composed = limp < 0.45f;
-
-        // legs first, then torso, then arms, then head (same stacking as before)
-        bone(g, hx, hy, body.x[Ragdoll.KNEE_L], body.y[Ragdoll.KNEE_L], 7f, bodyColor, outline);
-        bone(g, body.x[Ragdoll.KNEE_L], body.y[Ragdoll.KNEE_L],
-                body.x[Ragdoll.FOOT_L], body.y[Ragdoll.FOOT_L], 6.4f, bodyColor, outline);
-        bone(g, hx, hy, body.x[Ragdoll.KNEE_R], body.y[Ragdoll.KNEE_R], 7f, bodyColor, outline);
-        bone(g, body.x[Ragdoll.KNEE_R], body.y[Ragdoll.KNEE_R],
-                body.x[Ragdoll.FOOT_R], body.y[Ragdoll.FOOT_R], 6.4f, bodyColor, outline);
-        if (composed) {
-            foot(g, body.x[Ragdoll.FOOT_L], body.y[Ragdoll.FOOT_L], bodyColor, outline);
-            foot(g, body.x[Ragdoll.FOOT_R], body.y[Ragdoll.FOOT_R], bodyColor, outline);
+        drawSkeleton(g, body.x, body.y, bodyColor, outline);
+        if (ghost) {
+            g.alpha(120);
         }
-
-        // spine runs all the way to the head joint: the chest joint sits 8px
-        // below the neck, and stopping the bone there left the head detached
-        bone(g, nx, ny, hx, hy, 7f, bodyColor, outline);
-        bone(g, cx, cy, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L], 6f, bodyColor, outline);
-        bone(g, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L],
-                body.x[Ragdoll.HAND_L], body.y[Ragdoll.HAND_L], 6f, bodyColor, outline);
-        bone(g, cx, cy, body.x[Ragdoll.ELBOW_R], body.y[Ragdoll.ELBOW_R], 6f, bodyColor, outline);
-        bone(g, body.x[Ragdoll.ELBOW_R], body.y[Ragdoll.ELBOW_R],
-                body.x[Ragdoll.HAND_R], body.y[Ragdoll.HAND_R], 6f, bodyColor, outline);
-
-        // head: cheeky eye offset by facing, hair re-anchored on the head joint
-        float headR = 13f;
-        g.circle(nx, ny, headR + 1.8f, outline);
-        g.circle(nx, ny, headR, bodyColor);
-        g.circle(nx + facing * 5f, ny - 2f, 2.4f, 0xFF101018);
-        g.c.save();
-        g.c.translate(nx, ny - (-24f + wobY - headR + 4f) * squash);
-        drawHair(g, bodyColor);
-        g.c.restore();
-
         drawWeapon(g, body.x[Ragdoll.HAND_R], body.y[Ragdoll.HAND_R]);
-
-        if (shieldOn && shield > 0) {
-            float sx = (cx + hx) * 0.5f;
-            float sy = (cy + hy) * 0.5f;
-            int a = 70 + (int) (50f * (shield / maxShield));
-            g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
-            g.line.setStrokeWidth(3f);
-            g.c.drawCircle(sx, sy, 46f, g.line);
-            g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 34));
-            g.line.setStrokeWidth(11f);
-            g.c.drawCircle(sx, sy, 46f, g.line);
-        }
-
         if (ghost) {
-            g.alpha(255);
-        }
-        g.reset();
-
-        if (!dead && health < maxHealth) {
-            float w = 44f;
-            float barY = ny - 14f;
-            g.rrect(nx - w / 2, barY, w, 5f, 2.5f, 0x88000000);
-            g.rrect(nx - w / 2, barY, w * (health / maxHealth), 5f, 2.5f,
-                    health > 50 ? 0xFF7BFF9E : (health > 25 ? 0xFFFFD166 : 0xFFFF5D5D));
-        }
-    }
-
-    private void bone(Painter g, float x1, float y1, float x2, float y2, float w,
-                      int body, int outline) {
-        g.stroke(x1, y1, x2, y2, w + 3.4f, outline);
-        g.stroke(x1, y1, x2, y2, w, body);
-    }
-
-    private void foot(Painter g, float fx, float fy, int body, int outline) {
-        g.stroke(fx - 2f, fy, fx + 7f, fy, 8.4f, outline);
-        g.stroke(fx - 2f, fy, fx + 7f, fy, 5f, body);
-    }
-
-    /** The old transform-based pose, kept for fighters that never simulate. */
-    private void drawLocal(Painter g) {
-        g.c.save();
-        g.c.translate(x, y);
-
-        float squash = 1f;
-        if (crouch && onGround && !dead) {
-            squash = 0.72f;
-        }
-        g.c.scale(1f, squash);
-
-        int bodyColor = color;
-        if (flashT > 0) {
-            bodyColor = 0xFFFFFFFF;
-        }
-        if (spawnT > 0 && ((int) (spawnT * 20) % 2 == 0)) {
             g.alpha(120);
         }
-        int outline = luminance(bodyColor) > 0.55f ? 0x66000000 : 0x66FFFFFF;
-
-        float headR = 13f;
-        float neckY = -24f;
-        float hipY = 12f;
-
-        float legSwing = (float) Math.sin(walkPhase) * (onGround ? 12f : 6f);
-        float legSwing2 = (float) Math.sin(walkPhase + 3.14f) * (onGround ? 12f : 6f);
-        if (!onGround && !dead) {
-            legSwing = -10f;
-            legSwing2 = 8f;
+        if (shieldOn && shield > 0f) {
+            drawShield(g, (body.x[Ragdoll.CHEST] + body.x[Ragdoll.HIPS]) * 0.5f,
+                    (body.y[Ragdoll.CHEST] + body.y[Ragdoll.HIPS]) * 0.5f);
         }
-
-        float shoulderY = neckY + 8f;
-        float armLen = 22f;
-        float handXr;
-        float handYr;
-        if (shieldOn) {
-            handXr = facing * 16f;
-            handYr = shoulderY + 4f;
-        } else if (attacking) {
-            float t = 1f - Math.max(0f, attackT) / attackDur;
-            float swing = (float) Math.sin(t * Math.PI) * (float) Math.PI * 0.9f;
-            handXr = facing * (armLen * (float) Math.cos(swing * 0.9f));
-            handYr = shoulderY + armLen * (float) Math.sin(swing * 0.9f) * 0.9f;
-        } else {
-            handXr = facing * 10f;
-            handYr = shoulderY + 20f;
-        }
-
-        float kneeY = hipY + (FEET - hipY) * 0.52f;
-        leg(g, hipY, kneeY, legSwing, 1, bodyColor, outline);
-        leg(g, hipY, kneeY, legSwing2, -1, bodyColor, outline);
-        float nkX = wobX;
-        float nkY = neckY + wobY;
-        limb(g, nkX, nkY, 0, hipY, 7f, bodyColor, outline);
-        limb(g, 0, shoulderY, -facing * 8f, shoulderY + 18f, 6f, bodyColor, outline);
-        limb(g, 0, shoulderY, handXr, handYr, 6f, bodyColor, outline);
-
-        g.circle(nkX, nkY - headR + 4f, headR + 1.8f, outline);
-        g.circle(nkX, nkY - headR + 4f, headR, bodyColor);
-        g.circle(nkX + facing * 5f, nkY - headR + 2f, 2.4f, 0xFF101018);
-        g.c.save();
-        g.c.translate(wobX, wobY);
-        drawHair(g, bodyColor);
-        g.c.restore();
-
-        drawWeapon(g, handXr, handYr);
-
-        if (shieldOn && shield > 0) {
-            int a = 70 + (int) (50f * (shield / maxShield));
-            g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
-            g.line.setStrokeWidth(3f);
-            g.c.drawCircle(0, -6f, 46f, g.line);
-            g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 34));
-            g.line.setStrokeWidth(11f);
-            g.c.drawCircle(0, -6f, 46f, g.line);
-        }
-
-        g.c.restore();
         g.reset();
+        drawHealthBar(g, body.x[Ragdoll.HEAD], body.y[Ragdoll.HEAD]);
+    }
 
+    /** Same joint renderer for the customize preview; no separate cartoon pose. */
+    private void drawLocal(Painter g) {
+        poseNow();
+        int bodyColor = flashT > 0f ? 0xFFFFFFFF : color;
+        boolean ghost = spawnT > 0f && ((int) (spawnT * 20f) % 2 == 0);
+        int outline = outlineColor(bodyColor);
+        if (ghost) {
+            g.alpha(120);
+        }
+        drawSkeleton(g, poseX, poseY, bodyColor, outline);
+        if (ghost) {
+            g.alpha(120);
+        }
+        drawWeapon(g, poseX[Ragdoll.HAND_R], poseY[Ragdoll.HAND_R]);
+        if (ghost) {
+            g.alpha(120);
+        }
+        if (shieldOn && shield > 0f) {
+            drawShield(g, (poseX[Ragdoll.CHEST] + poseX[Ragdoll.HIPS]) * 0.5f,
+                    (poseY[Ragdoll.CHEST] + poseY[Ragdoll.HIPS]) * 0.5f);
+        }
+        g.reset();
+        drawHealthBar(g, poseX[Ragdoll.HEAD], poseY[Ragdoll.HEAD]);
+    }
+
+    private void drawSkeleton(Painter g, float[] jx, float[] jy, int bodyColor, int outline) {
+        bone(g, jx[Ragdoll.HIPS], jy[Ragdoll.HIPS],
+                jx[Ragdoll.KNEE_L], jy[Ragdoll.KNEE_L], 3.2f, bodyColor, outline);
+        bone(g, jx[Ragdoll.KNEE_L], jy[Ragdoll.KNEE_L],
+                jx[Ragdoll.FOOT_L], jy[Ragdoll.FOOT_L], 2.8f, bodyColor, outline);
+        bone(g, jx[Ragdoll.HIPS], jy[Ragdoll.HIPS],
+                jx[Ragdoll.KNEE_R], jy[Ragdoll.KNEE_R], 3.2f, bodyColor, outline);
+        bone(g, jx[Ragdoll.KNEE_R], jy[Ragdoll.KNEE_R],
+                jx[Ragdoll.FOOT_R], jy[Ragdoll.FOOT_R], 2.8f, bodyColor, outline);
+
+        // A single stick-like spine and open joints keep the figure lightweight.
+        bone(g, jx[Ragdoll.HEAD], jy[Ragdoll.HEAD],
+                jx[Ragdoll.CHEST], jy[Ragdoll.CHEST], 3.4f, bodyColor, outline);
+        bone(g, jx[Ragdoll.CHEST], jy[Ragdoll.CHEST],
+                jx[Ragdoll.HIPS], jy[Ragdoll.HIPS], 3.4f, bodyColor, outline);
+        bone(g, jx[Ragdoll.CHEST], jy[Ragdoll.CHEST],
+                jx[Ragdoll.ELBOW_L], jy[Ragdoll.ELBOW_L], 2.8f, bodyColor, outline);
+        bone(g, jx[Ragdoll.ELBOW_L], jy[Ragdoll.ELBOW_L],
+                jx[Ragdoll.HAND_L], jy[Ragdoll.HAND_L], 2.7f, bodyColor, outline);
+        bone(g, jx[Ragdoll.CHEST], jy[Ragdoll.CHEST],
+                jx[Ragdoll.ELBOW_R], jy[Ragdoll.ELBOW_R], 2.8f, bodyColor, outline);
+        bone(g, jx[Ragdoll.ELBOW_R], jy[Ragdoll.ELBOW_R],
+                jx[Ragdoll.HAND_R], jy[Ragdoll.HAND_R], 2.7f, bodyColor, outline);
+
+        float hx = jx[Ragdoll.HEAD];
+        float hy = jy[Ragdoll.HEAD];
+        g.circle(hx, hy, HEAD_RADIUS + 1.6f, outline);
+        g.circle(hx, hy, HEAD_RADIUS, bodyColor);
+        drawHairAt(g, hx, hy);
+    }
+
+    private void bone(Painter g, float x1, float y1, float x2, float y2, float width,
+                      int bodyColor, int outline) {
+        g.stroke(x1, y1, x2, y2, width + 2f, outline);
+        g.stroke(x1, y1, x2, y2, width, bodyColor);
+    }
+
+    private void drawShield(Painter g, float cx, float cy) {
+        int a = 70 + (int) (50f * (shield / maxShield));
+        g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
+        g.line.setStrokeWidth(3f);
+        g.c.drawCircle(cx, cy, 46f, g.line);
+        g.line.setColor(Painter.withAlpha(0xFFAFF6FF, 34));
+        g.line.setStrokeWidth(11f);
+        g.c.drawCircle(cx, cy, 46f, g.line);
+    }
+
+    private void drawHealthBar(Painter g, float hx, float hy) {
         if (!dead && health < maxHealth) {
             float w = 44f;
-            g.rrect(x - w / 2, y - HEAD - 34f, w, 5f, 2.5f, 0x88000000);
-            g.rrect(x - w / 2, y - HEAD - 34f, w * (health / maxHealth), 5f, 2.5f,
-                    health > 50 ? 0xFF7BFF9E : (health > 25 ? 0xFFFFD166 : 0xFFFF5D5D));
+            float barY = hy - HEAD_RADIUS - 8f;
+            g.rrect(hx - w / 2f, barY, w, 5f, 2.5f, 0x88000000);
+            g.rrect(hx - w / 2f, barY, w * (health / maxHealth), 5f, 2.5f,
+                    health > 50f ? 0xFF7BFF9E
+                            : (health > 25f ? 0xFFFFD166 : 0xFFFF5D5D));
         }
     }
 
-    private void leg(Painter g, float hipY, float kneeY, float swing, int side,
-                     int body, int outline) {
-        float hipX = side * HALF_W * 0.34f;
-        float kneeX = hipX + swing * 0.55f + side * 2f;
-        float footX = kneeX + swing * 0.5f;
-        limb(g, hipX, hipY, kneeX, kneeY, 7f, body, outline);
-        limb(g, kneeX, kneeY, footX, FEET, 6.4f, body, outline);
-        limb(g, footX - 2f, FEET, footX + 7f, FEET, 5f, body, outline);
-    }
-
-    private void limb(Painter g, float x1, float y1, float x2, float y2, float w,
-                      int body, int outline) {
-        g.stroke(x1, y1, x2, y2, w + 3.4f, outline);
-        g.stroke(x1, y1, x2, y2, w, body);
+    private int outlineColor(int bodyColor) {
+        return luminance(bodyColor) > 0.42f ? 0xFF11141B : 0xFFE8EBF2;
     }
 
     private static float luminance(int c) {
@@ -902,94 +929,137 @@ public final class Fighter {
         return 0.299f * r + 0.587f * gg + 0.114f * b;
     }
 
-    private void drawHair(Painter g, int body) {
+    private void drawHairAt(Painter g, float hx, float hy) {
         if (hair == 0) {
             return;
         }
         int c = accent;
         if (hair == 1) {
             Path p = new Path();
-            float hx = 0f, hy = -HEAD + 4f - 13f;
-            p.moveTo(hx - 11, hy + 3);
-            p.lineTo(hx - 4, hy - 12);
-            p.lineTo(hx + 1, hy - 1);
-            p.lineTo(hx + 6, hy - 11);
-            p.lineTo(hx + 11, hy + 3);
+            p.moveTo(hx - 8f, hy - 5f);
+            p.lineTo(hx - 5f, hy - HEAD_RADIUS - 5f);
+            p.lineTo(hx, hy - HEAD_RADIUS - 1f);
+            p.lineTo(hx + 4f, hy - HEAD_RADIUS - 6f);
+            p.lineTo(hx + 8f, hy - 5f);
             p.close();
             g.path(p, c);
         } else if (hair == 2) {
-            g.stroke(-13, -13f - 12f + 4f, 13, -13f - 12f + 4f, 4f, c);
+            g.stroke(hx - 8f, hy - 5f, hx + 8f, hy - 5f, 3.2f, c);
         } else {
-            g.rrect(-13, -46f, 26, 7, 3, c);
+            g.rrect(hx - 8f, hy - HEAD_RADIUS - 2f, 16f, 5f, 2f, c);
+        }
+    }
+
+    /** Draws the held weapon while the jointed body is down or dead. */
+    public void drawRagdollWeapon(Painter g) {
+        if (body != null) {
+            drawWeapon(g, body.x[Ragdoll.HAND_R], body.y[Ragdoll.HAND_R], body.fade);
         }
     }
 
     private void drawWeapon(Painter g, float hx, float hy) {
-        if (dead) {
+        drawWeapon(g, hx, hy, 1f);
+    }
+
+    private void drawWeapon(Painter g, float hx, float hy, float opacity) {
+        opacity = Math.max(0f, Math.min(1f, opacity));
+        if (opacity <= 0f) {
             return;
         }
         int w = weapon;
         if (w == Weapons.FIST) {
-            g.circle(hx, hy, 4.5f, color);
+            g.circle(hx, hy, 4.5f, fadeColor(color, opacity));
             return;
         }
         Weapons.Def d = Weapons.DEFS[w];
-        int c = abilityT <= 0f ? d.color : Painter.mix(d.color, 0xFF4A4A55, 0.55f);
+        int rawColor = abilityT <= 0f ? d.color : Painter.mix(d.color, 0xFF4A4A55, 0.55f);
+        int c = fadeColor(rawColor, opacity);
         g.c.save();
         g.c.translate(hx, hy);
-        float rot = (float) Math.toDegrees(weaponAngle);
+        float rot = (float) Math.toDegrees(currentWeaponAngle());
         g.c.rotate(rot);
         switch (w) {
-            case 1:
-                g.rrect(-2, -4, 30, 6, 2, c);
-                g.rrect(-6, -6, 6, 10, 2, 0xFF8A6B3A);
+            case Weapons.SWORD:
+                g.rrect(-10f, -2f, 12f, 4f, 2f, fadeColor(0xFF76552D, opacity));
+                g.rrect(-1f, -5f, 2.5f, 10f, 1f, fadeColor(0xFFB38A4A, opacity));
+                drawBlade(g, 2f, d.reach - 2f, 3.2f, c);
                 break;
-            case 2:
-                g.rrect(-2, -3, 46, 5, 2, c);
-                g.circle(46, 0, 4, Painter.mix(c, 0xFFFFFFFF, 0.4f));
+            case Weapons.SPEAR:
+                g.stroke(-8f, 0f, d.reach - 10f, 0f, 3f, fadeColor(0xFF8A6B3A, opacity));
+                drawBlade(g, d.reach - 13f, 13f, 4.5f, c);
                 break;
-            case 3:
-                g.rrect(-2, -3, 26, 6, 2, c);
-                g.rrect(22, -4, 22, 8, 3, Painter.mix(c, 0xFFFFFFFF, 0.35f));
+            case Weapons.DUAL_SABERS:
+                g.rrect(-5f, -2f, 10f, 4f, 2f, fadeColor(0xFF76552D, opacity));
+                drawBlade(g, 3f, 47f, 2.7f, c);
+                g.c.save();
+                g.c.rotate(-42f);
+                drawBlade(g, 1f, 25f, 2.4f, fadeColor(Painter.mix(rawColor, 0xFFFFFFFF, 0.25f), opacity));
+                g.c.restore();
                 break;
-            case 4:
-                g.rrect(-2, -3, 24, 6, 2, c);
-                g.rrect(-2, -9, 20, 5, 2, Painter.mix(c, 0xFFFFFFFF, 0.3f));
+            case Weapons.KUNAI:
+                drawBlade(g, -1f, 25f, 4f, c);
+                g.rrect(-8f, -2f, 9f, 4f, 1.5f, fadeColor(0xFF76552D, opacity));
                 break;
-            case 5:
-                g.rrect(-2, -4, 24, 8, 3, c);
-                g.rrect(20, -8, 12, 16, 3, Painter.mix(c, 0xFF000000, 0.25f));
+            case Weapons.HAMMER:
+                g.stroke(-7f, 0f, d.reach - 8f, 0f, 4f, fadeColor(0xFF8A6B3A, opacity));
+                g.rrect(d.reach - 15f, -9f, 17f, 18f, 3f,
+                        fadeColor(Painter.mix(rawColor, 0xFF000000, 0.2f), opacity));
+                g.rrect(d.reach - 13f, -7f, 12f, 14f, 2f, c);
                 break;
-            case 6:
-                g.c.drawArc(new RectF(-12, -16, 12, 16), -70, 140, false, arcPaint(c, 3f));
-                g.stroke(-4, 0, 14, 0, 1.5f, 0xFFE8E8E8);
+            case Weapons.BOW:
+                g.c.drawArc(new RectF(-12f, -18f, 13f, 18f), -74f, 148f,
+                        false, arcPaint(c, 2.6f));
+                g.stroke(-5f, 0f, 17f, 0f, 1.4f, fadeColor(0xFFE8E8E8, opacity));
                 break;
-            case 7:
-                g.stroke(-2, 0, 26, 0, 5f, 0xFF8A6B3A);
-                g.circle(26, 0, 4.5f, c);
+            case Weapons.WAND:
+                g.stroke(-5f, 0f, 29f, 0f, 3.4f, fadeColor(0xFF8A6B3A, opacity));
+                g.circle(30f, 0f, 5f, c);
+                g.circle(30f, 0f, 2f, fadeColor(Painter.mix(rawColor, 0xFFFFFFFF, 0.65f), opacity));
                 break;
-            case 8:
-                g.circle(0, 0, 6, 0xFF3A3A44);
-                g.rrect(5, -4, 10, 8, 2, c);
+            case Weapons.BOMB:
+                g.circle(0f, 0f, 6f, fadeColor(0xFF303039, opacity));
+                g.rrect(4f, -5f, 9f, 10f, 2f, c);
+                g.circle(13f, -4f, 2f, fadeColor(0xFFFFE38A, opacity));
                 break;
-            case 9:
-                g.stroke(-2, 0, 20, 0, 5f, 0xFF8A6B3A);
-                g.c.drawArc(new RectF(14, -12, 38, 12), -60, 120, false, arcPaint(c, 3f));
+            case Weapons.BOOMERANG:
+                g.stroke(-5f, 0f, 20f, 0f, 3.2f, fadeColor(0xFF8A6B3A, opacity));
+                g.c.drawArc(new RectF(12f, -13f, 39f, 13f), -62f, 124f,
+                        false, arcPaint(c, 3.2f));
                 break;
-            case 10:
-                g.rrect(-2, -4, 22, 8, 2, 0xFF4A4A55);
-                g.rrect(4, 0, 10, 6, 2, 0xFF2A2A32);
+            case Weapons.PISTOL:
+                g.rrect(-3f, -4f, 24f, 8f, 2f, fadeColor(0xFF4A4A55, opacity));
+                g.rrect(4f, 2f, 8f, 6f, 1.5f, fadeColor(0xFF2A2A32, opacity));
+                g.rrect(17f, -2f, 8f, 3f, 1f, c);
                 break;
-            case 11:
-                g.rrect(-2, -4, 34, 8, 4, c);
-                g.stroke(-2, 0, 34, 0, 2f, 0xFFFFFFFF);
+            case Weapons.ENERGY_BLADE:
+                g.rrect(-8f, -3f, 10f, 6f, 2f, fadeColor(0xFF384650, opacity));
+                drawBlade(g, 2f, d.reach - 2f, 4f, c);
+                g.stroke(3f, 0f, d.reach, 0f, 1.1f, fadeColor(0xFFE8FFFF, opacity));
                 break;
             default:
-                g.circle(0, 0, 5, c);
+                g.circle(0f, 0f, 4f, fadeColor(color, opacity));
                 break;
         }
         g.c.restore();
         g.reset();
+    }
+
+    private static int fadeColor(int color, float opacity) {
+        int originalAlpha = (color >>> 24) & 0xFF;
+        return Painter.withAlpha(color, (int) (originalAlpha * opacity));
+    }
+
+    private void drawBlade(Painter g, float start, float length, float halfWidth, int color) {
+        float end = start + length;
+        float shoulder = Math.max(start, end - Math.min(8f, length * 0.22f));
+        Path blade = new Path();
+        blade.moveTo(start, -halfWidth * 0.55f);
+        blade.lineTo(shoulder, -halfWidth);
+        blade.lineTo(end, 0f);
+        blade.lineTo(shoulder, halfWidth);
+        blade.lineTo(start, halfWidth * 0.55f);
+        blade.close();
+        g.path(blade, color);
     }
 
     private android.graphics.Paint arcPaint(int c, float w) {

@@ -2,7 +2,7 @@
 
 A native Android 2D stick-fighting game inspired by Neron's Brother's *Supreme Duelist Stickman*, built with original Java code and Canvas artwork.
 
-**Scope:** this is an independent, incomplete recreation—not a port and not yet feature-parity with the original. The current build has 12 weapons, 10 arenas and three modes. The larger content roster, 3–4 player party play, extra minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
+**Scope:** this is an independent, incomplete recreation—not a port and not feature-parity with the original. The current build has 12 weapons, 10 arenas and four modes. The larger content roster, 3–4 player party play, football and other minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
 
 **Install v0.2.1:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
 
@@ -43,8 +43,10 @@ There are **no separate attack, jump or defend buttons**. Each fighter uses one 
 ### Combat and physics
 
 - Active 11-joint Verlet bodies for standing fighters, hit reactions, knockdowns and K.O.s—not only death animations.
+- Bright green/yellow default fighters with clean dark outlines and simple round heads; the live fighter and customization preview share one pose renderer, and weapons stay attached through ragdoll falls.
+- A counter-swinging walk cycle, subtle body bob, floor-anchored crouch with a shorter head hitbox, and weapon-specific wind-up, strike and follow-through poses.
+- Melee attacks add a small weapon-weighted step, align fists' hit distance with the drawn arm, and sample the swung weapon segment across the frame; this is still not a full continuous physics simulation.
 - Poise breaks, limp knockdowns, automatic recovery and brief recovery invulnerability.
-- Melee contact follows the rendered weapon segment and tested body joints, including upward attacks; it is not a full continuous/swept physics simulation.
 - Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
 - Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
 - CPU spacing, punishing, committed platform-to-platform routes, non-jumping hazard retreats and occasional weapon-skill use across four difficulties.
@@ -78,6 +80,7 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - **Quick Fight:** first to two rounds against the CPU; a double K.O. replays without awarding a point.
 - **Local Duel:** two players on one device with the same one-stick control scheme.
 - **Survival:** successive enemies, wave rewards, healing and increasing difficulty. A mutual K.O. is a player defeat, not a free wave.
+- **Boss Tournament:** five custom boss fights with themed names, colors, weapons and rising health; earn a reward for each clean takedown, recover between fights, and win by defeating all five. This is an original implementation, not a reproduction of the original game's boss content.
 
 ### Meta and accessibility
 
@@ -88,7 +91,7 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 
 ## Validation
 
-`SmokeTest` currently contains **26 authored Robolectric tests**. Coverage includes real touch release, every weapon skill, directional melee contact, double-K.O. and Survival outcomes, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+`SmokeTest` currently contains **38 authored Robolectric tests**. Coverage includes real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -125,9 +128,10 @@ app/src/test/java/com/arena/duelist/SmokeTest.java
 
 ## Remaining parity work
 
+- [ ] Side-by-side visual, animation and physics tuning against a selected current-version reference
 - [ ] Original-scale weapon and arena roster
 - [ ] 3–4 player local party matches
-- [ ] Football, boss tournament and other original modes
+- [ ] Football and other original modes
 - [ ] Map editor
 - [ ] Wi-Fi/LAN multiplayer
 - [ ] Physical-device gameplay/performance validation
