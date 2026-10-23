@@ -185,11 +185,13 @@ public class SmokeTest {
         shot("13-settings");
         tap(200, 147);        // flip gravity
         tap(200, 209);        // flip instant KO
+        tap(320, 399);        // CPU difficulty cycles
 
         boot();
         tap(1020, 382);       // CUSTOMIZE
-        tap(134, 150);        // pick a body colour
-        tap(160, 262);        // pick hair
+        tap(282, 150);        // pick a body colour
+        tap(362, 284);        // pick hair
+        tap(186, 284);        // spiky hair
         shot("14-customize");
 
         boot();

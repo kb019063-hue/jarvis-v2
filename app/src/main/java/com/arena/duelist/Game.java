@@ -1690,11 +1690,16 @@ public final class Game {
         p.weapon = profile.starter;
         p.spawnT = 0;
         p.x = viewW * 0.5f;
-        p.y = viewH - 110;
+        p.y = viewH - 96;
         p.onGround = true;
+        g.c.save();
+        g.c.translate(p.x, p.y);
+        g.c.scale(1.75f, 1.75f);
+        g.c.translate(-p.x, -p.y);
         p.draw(g);
+        g.c.restore();
         g.size(12);
-        g.textCenter("PREVIEW", p.x, p.y + 70, 0x66FFFFFF);
+        g.textCenter("PREVIEW", p.x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -1714,15 +1719,18 @@ public final class Game {
         toggleRow(g, x, y + rowH * 3, wRow, rowH, "Sound", profile.sound, A_SOUND);
         toggleRow(g, x, y + rowH * 4, wRow, rowH, "Voice announcer", profile.voice, A_VOICE);
 
-        float y2 = y + rowH * 5 + 6;
-        g.size(16);
-        g.text("CPU DIFFICULTY", x, y2 + 20, 0xCCFFFFFF);
-        btn(g, x + 250, y2 - 8, 200, 40, DIFF_NAMES[profile.difficulty], A_DIFF, 0xFF7D8BFF);
+        float y2 = y + rowH * 5 + 10;
+        g.size(15);
+        g.text("CPU DIFFICULTY", x + 16, y2 + 26, 0xCCFFFFFF);
+        btn(g, x + 180, y2 + 2, 190, 40, DIFF_NAMES[profile.difficulty], A_DIFF, 0xFF7D8BFF);
 
-        btn(g, x, y2 + 44, 200, 40, "RESET PROGRESS", A_RESET, 0xFFFF6B8A);
+        float y3 = y2 + 56;
+        g.size(12);
+        g.text("Wipes coins, unlocks and records", x + 16, y3 + 28, 0x88FFFFFF);
+        btn(g, x + 250, y3 + 4, 190, 40, "RESET PROGRESS", A_RESET, 0xFFFF6B8A);
 
         g.size(11);
-        g.text("Stick Duelist v0.1 · built in Arena Agent Mode", x, viewH - 18, 0x66FFFFFF);
+        g.text("Stick Duelist v0.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
