@@ -16,8 +16,8 @@ every hit, is absent, and most of its content and party modes are missing.
 | Item | Evidence |
 |---|---|
 | Native Android app (Java, no engine, no external assets) | `app/src/main/java/com/arena/duelist/*.java`, ~4.4k lines |
-| Builds and tests green | GitHub Actions run `39899454769` — `Compile and test` = success |
-| Installable APK | Release `build-18` → `stick-duelist-18.apk`, `minSdk 24` (Android 7.0+) |
+| Builds and tests green | GitHub Actions on this branch — `assembleDebug` + `testDebugUnitTest` success |
+| Installable APK | Releases `build-19`–`build-21` → `stick-duelist-<n>.apk`, `minSdk 24` (Android 7.0+) |
 | Screenshots are real frames | `SmokeTest` renders with Robolectric NATIVE graphics to PNG |
 | 10 arenas, 12 weapons, 3 modes, coins/unlocks/settings | `Maps.java`, `Weapons.java`, `Game.java`, `Profile.java` |
 
