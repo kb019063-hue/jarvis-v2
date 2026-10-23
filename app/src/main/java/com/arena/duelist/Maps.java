@@ -66,6 +66,10 @@ public final class Maps {
         }
     }
 
+    public static final Arena FOOTBALL = new Arena("Football Stadium",
+            0xFF163B54, 0xFF3C9364, 0xFF24583D, 0xFFB6F59C, 0xFF2A684A,
+            1400, 820, 400, 1000, 560).add(-90, 640, 1580, 180, 1);
+
     public static final Arena[] ALL = build();
 
     public static final String[] NAMES = collectNames(ALL);

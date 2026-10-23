@@ -996,4 +996,32 @@ public class SmokeTest {
         game.draw(canvas);
         assertTrue("arena screenshots should be written", shotsWritten >= 2);
     }
+    @Test
+    public void footballMenusAndLocalMultitouchRender() {
+        boot();
+        float scale = SCREEN_H / 540f;
+        game.pointerDown(1, 150f * scale, 310f * scale);
+        assertEquals(5, game.debugScreen());
+        assertTrue(game.debugFighter(1).cpu);
+        step(190);
+        shot("23-football-cpu");
+        game.backPressed();
+        game.backPressed();
+        game.draw(canvas);
+        game.pointerDown(2, 150f * scale, 365f * scale);
+        assertEquals(5, game.debugScreen());
+        assertFalse(game.debugFighter(1).cpu);
+        game.debugStartFight();
+        step(45);
+        game.pointerDown(11, 92f * scale, 448f * scale);
+        game.pointerDown(12, (1200f - 92f) * scale, 448f * scale);
+        game.pointerMove(11, 150f * scale, 448f * scale);
+        game.pointerMove(12, (1200f - 150f) * scale, 448f * scale);
+        step(20);
+        assertTrue(game.debugFighter(0).moveX > 0f);
+        assertTrue(game.debugFighter(1).moveX < 0f);
+        shot("24-football-local");
+        game.pointerCancel();
+    }
+
 }

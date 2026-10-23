@@ -140,7 +140,7 @@ public final class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         if (view != null) {
-            view.stopLoop();
+            view.pauseLoop();
         }
         if (tts != null) {
             try {
@@ -155,7 +155,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         hideSystemBars();
         if (view != null) {
-            view.reacquire();
+            view.resumeLoop();
         }
     }
 
@@ -164,6 +164,8 @@ public final class MainActivity extends Activity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemBars();
+        } else if (view != null) {
+            view.game().suspend();
         }
     }
 
