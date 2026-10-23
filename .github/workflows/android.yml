@@ -31,12 +31,12 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Compile
+      - name: Compile and test
         run: |
           set +e
-          gradle assembleDebug --no-daemon --console=plain > build.log 2>&1
+          gradle assembleDebug testDebugUnitTest --no-daemon --console=plain > build.log 2>&1
           code=$?
-          tail -n 120 build.log
+          tail -n 140 build.log
           exit $code
 
       - name: Report compiler errors
@@ -45,7 +45,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f build.log ]; then exit 0; fi
-          grep -nE "error:|error: |e: " build.log | head -25 | while IFS= read -r line; do
+          grep -nE "error:|FAILED|Exception|Caused by|at com.arena" build.log | head -30 | while IFS= read -r line; do
             echo "::error::${line}"
           done
           {
@@ -67,3 +67,17 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # Publishes the APK as a public release asset so it can be installed
+      # straight from a phone without a GitHub login.
+      - name: Publish installable APK
+        if: success() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="stick-duelist-${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          gh release create "build-${GITHUB_RUN_NUMBER}" "$APK" \
+            --title "Stick Duelist build ${GITHUB_RUN_NUMBER}" \
+            --notes "Debug APK built from \`${GITHUB_SHA}\" on ${GITHUB_REF_NAME}. Install on Android 7.0+ (allow unknown sources)." \
+            --latest

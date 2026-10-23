@@ -1776,6 +1776,25 @@ public final class Game {
         uiBtns.add(b);
     }
 
+    // ------------------------------------------------------------ test hooks
+
+    void debugStartMatch(int m, int map) {
+        pendingMode = m;
+        resetMatch(m, map, true);
+    }
+
+    Fighter debugFighter(int i) {
+        return fighters[i];
+    }
+
+    int debugScreen() {
+        return screen;
+    }
+
+    int debugPhase() {
+        return phase;
+    }
+
     // --------------------------------------------------------------- helpers
 
     private Path triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
