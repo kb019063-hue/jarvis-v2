@@ -164,7 +164,7 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                 last = now;
                 accumulator += Math.min(elapsed, 0.10f);
                 int steps = 0;
-                while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+                while (alive && running && accumulator >= FIXED_DT && steps < MAX_STEPS) {
                     game.tick(FIXED_DT);
                     accumulator -= FIXED_DT;
                     steps++;
@@ -174,12 +174,13 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                     accumulator = 0f;
                 }
 
+                if (!alive || !running) break;
                 Canvas c = null;
                 try {
                     c = holder.lockCanvas();
                     if (c != null) {
                         synchronized (holder) {
-                            game.draw(c);
+                            if (alive && running) game.draw(c);
                         }
                     }
                 } catch (IllegalArgumentException | IllegalStateException e) {

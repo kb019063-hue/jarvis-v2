@@ -114,7 +114,16 @@ public class FootballRegressionTest {
     @Test public void countdownAndPauseFreezeBallAndRejectPowerKick() {
         Game g = boot(5);
         Football ball = g.debugFootball();
+        ball.x = g.debugFighter(0).x + 60f;
+        ball.y = g.debugFighter(0).y + 15f;
+        g.debugFighter(0).spawnT = 0f;
         float y = ball.y;
+        float scale = 720f / 540f;
+        g.pointerDown(1, 92f * scale, 448f * scale);
+        g.pointerMove(1, 160f * scale, 448f * scale);
+        g.pointerUp(1, 160f * scale, 448f * scale);
+        assertEquals(0f, ball.vx, 0f);
+        assertEquals(0f, g.debugFighter(0).abilityT, 0f);
         g.tick(1f / 60f);
         assertEquals(y, ball.y, 0f);
         g.debugStartFight();
@@ -128,7 +137,12 @@ public class FootballRegressionTest {
     @Test public void footballCannotDamagePlayersOrSpawnWeapons() {
         Game g = boot(4);
         g.debugStartFight();
-        for (int i = 0; i < 900; i++) g.tick(1f / 60f);
+        boolean cpuEngaged = false;
+        for (int i = 0; i < 900; i++) {
+            g.tick(1f / 60f);
+            cpuEngaged |= Math.abs(g.debugFootball().vx) > 100f;
+        }
+        assertTrue("CPU must engage the ball, not only survive", cpuEngaged);
         assertEquals(100f, g.debugFighter(0).health, 0f);
         assertEquals(100f, g.debugFighter(1).health, 0f);
         assertEquals(0, g.debugShotCount());

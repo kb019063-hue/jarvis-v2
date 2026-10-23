@@ -90,7 +90,7 @@ jobs:
           {
             echo "Build OK \`${GITHUB_SHA:0:7}\`"
             echo '```'
-            grep -E "BUILD SUCCESSFUL|PASSED|FAILED|tests completed" build.log | head -20
+            grep -E "BUILD SUCCESSFUL|PASSED|FAILED|tests completed" build.log | head -100
             ls -lh app/build/outputs/apk/debug/*.apk | awk '{print $5, $9}'
             echo '```'
             echo "screenshots:"
@@ -98,6 +98,15 @@ jobs:
           } > /tmp/summary.md
           gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
             -f body="$(cat /tmp/summary.md)" > /dev/null || true
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-unit-test-reports
+          path: app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload APK
         if: success()

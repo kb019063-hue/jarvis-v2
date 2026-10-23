@@ -2414,6 +2414,7 @@ public final class Game {
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins · a double K.O. replays without a point",
                 "Boss Tournament: defeat five escalating opponents and recover between fights",
+                "Football: first to 3 goals · contact kicks · release near the ball for a power kick",
         };
         g.size(14);
         for (int i = 0; i < lines.length; i++) {
@@ -2442,7 +2443,7 @@ public final class Game {
         float bw = pw - 60;
         btn(g, bx, py + 82, bw, 48, "RESUME", A_RESUME, 0xFF9BE86B);
         btn(g, bx, py + 138, bw, 48, "RESTART", A_RESTART, 0xFF4D9BFF);
-        btn(g, bx, py + 194, bw, 48, "CHANGE ARENA", A_MAPS_FROM_PAUSE, 0xFF7D8BFF);
+        btn(g, bx, py + 194, bw, 48, isFootball() ? "RESET PITCH" : "CHANGE ARENA", A_MAPS_FROM_PAUSE, 0xFF7D8BFF);
         btn(g, bx, py + 250, bw, 48, "QUIT TO MENU", A_QUIT, 0xFFFF6B8A);
         c.restore();
     }
