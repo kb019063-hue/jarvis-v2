@@ -1,5 +1,6 @@
 package com.arena.duelist;
 
+import android.graphics.Path;
 import android.graphics.RectF;
 
 /**
@@ -50,6 +51,8 @@ public final class Ragdoll {
 
     public final int color;
     public int hair;
+    public int accent = 0xFFFF4D6D;
+    public int facing = 1;
     public float age;
     /** 1 = fully opaque, 0 = finished: the corpse fades once it has settled. */
     public float fade = 1f;
@@ -64,25 +67,27 @@ public final class Ragdoll {
 
     public Ragdoll(Fighter f) {
         this(f.x, f.y, f.facing, f.vx, f.vy, f.color, f.hair);
+        this.accent = f.accent;
     }
 
     public Ragdoll(float cx, float cy, int facing, float vx, float vy, int color, int hair) {
         this.color = color;
         this.hair = hair;
-        float f = facing >= 0 ? 1f : -1f;
+        this.facing = facing >= 0 ? 1 : -1;
+        float f = this.facing;
 
-        // same skeleton as Fighter.draw(): hips 12, chest -24, head -37 above origin
-        setPoint(HIPS, cx, cy + 10f);
-        setPoint(CHEST, cx, cy - 16f);
-        setPoint(HEAD, cx, cy - 37f);
-        setPoint(ELBOW_L, cx - f * 13f, cy - 5f);
-        setPoint(HAND_L, cx - f * 17f, cy + 11f);
-        setPoint(ELBOW_R, cx + f * 13f, cy - 5f);
-        setPoint(HAND_R, cx + f * 17f, cy + 11f);
-        setPoint(KNEE_L, cx - 7f, cy + 21f);
-        setPoint(FOOT_L, cx - 9f, cy + 30f);
-        setPoint(KNEE_R, cx + 7f, cy + 21f);
-        setPoint(FOOT_R, cx + 9f, cy + 30f);
+        // Same compact, longer-legged silhouette as Fighter.poseNow().
+        setPoint(HIPS, cx, cy + 6f);
+        setPoint(CHEST, cx, cy - 13f);
+        setPoint(HEAD, cx, cy - 20f - Fighter.HEAD_RADIUS + 4f);
+        setPoint(ELBOW_L, cx - f * 5.5f, cy - 4.75f);
+        setPoint(HAND_L, cx - f * 10f, cy + 2f);
+        setPoint(ELBOW_R, cx + f * 10f, cy - 8.5f);
+        setPoint(HAND_R, cx + f * 18f, cy - 4f);
+        setPoint(KNEE_L, cx + 7.4f, cy + 18.5f);
+        setPoint(FOOT_L, cx + 7.4f, cy + 30f);
+        setPoint(KNEE_R, cx - 7.4f, cy + 18.5f);
+        setPoint(FOOT_R, cx - 7.4f, cy + 30f);
 
         for (int i = 0; i < N; i++) {
             // small foot radii so a standing foot can rest on the surface line
@@ -107,6 +112,10 @@ public final class Ragdoll {
         float dx = x[a] - x[b];
         float dy = y[a] - y[b];
         return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    float collisionRadius(int joint) {
+        return rad[joint];
     }
 
     /** Pure physics (corpse / knocked down). */
@@ -345,17 +354,42 @@ public final class Ragdoll {
     public void draw(Painter g) {
         float a = Math.max(0f, Math.min(1f, fade));
         int body = Painter.withAlpha(color, (int) (255f * a));
-        int outline = Painter.withAlpha(
-                luminance(color) > 0.55f ? 0x000000 : 0xFFFFFF, (int) (102f * a));
+        int edgeColor = luminance(color) > 0.42f ? 0xFF11141B : 0xFFE8EBF2;
+        int outline = Painter.withAlpha(edgeColor, (int) (230f * a));
 
         for (int b = 0; b < DRAW_BONES; b++) {
             int i = BONES[b][0];
             int j = BONES[b][1];
-            g.stroke(x[i], y[i], x[j], y[j], 10f, outline);
-            g.stroke(x[i], y[i], x[j], y[j], 6.6f, body);
+            g.stroke(x[i], y[i], x[j], y[j], 5.2f, outline);
+            g.stroke(x[i], y[i], x[j], y[j], 3.2f, body);
         }
-        g.circle(x[HEAD], y[HEAD], 14.8f, outline);
-        g.circle(x[HEAD], y[HEAD], 13f, body);
+        float hx = x[HEAD];
+        float hy = y[HEAD];
+        g.circle(hx, hy, Fighter.HEAD_RADIUS + 1.6f, outline);
+        g.circle(hx, hy, Fighter.HEAD_RADIUS, body);
+        drawHair(g, hx, hy, a);
+    }
+
+    private void drawHair(Painter g, float hx, float hy, float alpha) {
+        if (hair == 0) {
+            return;
+        }
+        int c = Painter.withAlpha(accent, (int) (255f * alpha));
+        float r = Fighter.HEAD_RADIUS;
+        if (hair == 1) {
+            Path p = new Path();
+            p.moveTo(hx - 9f, hy - r + 2f);
+            p.lineTo(hx - 4f, hy - r - 7f);
+            p.lineTo(hx + 1f, hy - r - 1f);
+            p.lineTo(hx + 6f, hy - r - 7f);
+            p.lineTo(hx + 9f, hy - r + 2f);
+            p.close();
+            g.path(p, c);
+        } else if (hair == 2) {
+            g.stroke(hx - 9f, hy - r + 1f, hx + 9f, hy - r + 1f, 3f, c);
+        } else {
+            g.rrect(hx - 9f, hy - r - 4f, 18f, 5f, 2f, c);
+        }
     }
 
     private static float luminance(int c) {

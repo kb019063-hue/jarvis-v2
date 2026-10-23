@@ -101,10 +101,7 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                 break;
             }
             case MotionEvent.ACTION_CANCEL: {
-                int n = e.getPointerCount();
-                for (int i = 0; i < n; i++) {
-                    game.pointerUp(e.getPointerId(i), e.getX(i), e.getY(i));
-                }
+                game.pointerCancel();
                 break;
             }
             default:

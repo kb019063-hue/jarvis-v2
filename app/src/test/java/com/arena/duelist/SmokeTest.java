@@ -183,7 +183,7 @@ public class SmokeTest {
         assertEquals("arena pick starts a match", 5, game.debugScreen());
 
         boot();
-        tap(1020, 330);       // ARSENAL
+        tap(1020, 390);       // ARSENAL
         shot("11-arsenal");
         // Sword costs 120; the player starts with 250 coins. The first tap must
         // only arm the purchase, the second must actually spend.
@@ -200,28 +200,36 @@ public class SmokeTest {
         shot("20-arsenal-bought");
 
         boot();
-        tap(1020, 434);       // SETTINGS
+        tap(1020, 494);       // SETTINGS
         shot("13-settings");
         tap(200, 147);        // flip gravity
         tap(200, 190);        // flip instant KO (row moved with the compact layout)
         tap(320, 399);        // CPU difficulty cycles
 
         boot();
-        tap(1020, 382);       // CUSTOMIZE
+        tap(1020, 442);       // CUSTOMIZE
         tap(282, 150);        // pick a body colour
         tap(362, 284);        // pick hair
         tap(186, 284);        // spiky hair
         shot("14-customize");
 
         boot();
-        tap(826, 434);        // "?" how to play (was 786: six units outside the button)
+        tap(826, 494);        // "?" how to play (was 786: six units outside the button)
         shot("15-how-to-play");
+
+        boot();
+        tap(1020, 334);       // BOSS TOURNAMENT
+        assertEquals("boss mode opens the arena picker", 1, game.debugScreen());
+        shot("21-boss-arena-picker");
+        tap(210, 166);
+        assertEquals("choosing an arena starts the boss tournament", 5, game.debugScreen());
+        assertEquals("the tournament starts with Ironclad", "IRONCLAD", game.debugFighter(1).name);
     }
 
     @Test
     public void androidBackClearsStaleMenuHitboxes() {
         boot();
-        tap(1020, 330); // Arsenal
+        tap(1020, 390); // Arsenal
         int coins = game.profile.coins;
         assertTrue("Back should leave the arsenal", game.backPressed());
         assertEquals("Back should return to the title", 0, game.debugScreen());
@@ -238,7 +246,9 @@ public class SmokeTest {
         boot();
         game.debugStartMatch(0, 0);
         game.debugStartFight();
-        // modest knockback so the body stays in frame for the screenshot
+        // modest knockback so the body stays in frame; keep a weapon in hand
+        // to cover the attachment renderer in a real K.O. pose.
+        game.debugFighter(1).giveWeapon(Weapons.HAMMER);
         game.debugFighter(1).kill(120);
 
         step(14);
@@ -268,6 +278,130 @@ public class SmokeTest {
         assertTrue("body should rest on a platform, not fall out of the arena",
                 body.y[Ragdoll.FOOT_L] < arena.bounds.bottom
                         && body.y[Ragdoll.HEAD] < arena.bounds.bottom);
+    }
+
+    @Test
+    public void gravityOffStopsFighterAcceleration() {
+        Fighter f = new Fighter(0, "TEST", 300f, 220f, false);
+        f.spawnT = 0f;
+        f.onGround = false;
+        f.update(1f / 60f, Maps.ALL[0], false, false);
+        assertEquals("zero-G should not add downward velocity", 0f, f.vy, 0.001f);
+    }
+
+    @Test
+    public void gravityOffStopsRagdollAcceleration() {
+        Maps.Arena arena = Maps.ALL[0];
+        Ragdoll body = new Ragdoll(300f, 220f, 1, 0f, 0f, 0xFFF2F2F2, 0);
+        float startY = body.y[Ragdoll.HIPS];
+        for (int i = 0; i < 60; i++) {
+            body.update(1f / 60f, arena, null, null, 0f, 0f);
+        }
+        assertEquals("a corpse must obey the zero-G setting", startY,
+                body.y[Ragdoll.HIPS], 0.001f);
+    }
+
+    @Test
+    public void matchGravitySettingAppliesToDeadBodies() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        game.profile.gravity = false;
+        Fighter corpse = game.debugFighter(1);
+        // Keep the body clear of the spawn platform's underside: collision
+        // separation is independent of gravity and should not affect this check.
+        corpse.x = 700f;
+        corpse.y = 200f;
+        corpse.vx = 0f;
+        corpse.vy = 0f;
+        corpse.dead = true;
+        corpse.justDied = false;
+        corpse.body = new Ragdoll(corpse);
+        float startY = corpse.body.y[Ragdoll.HIPS];
+
+        for (int i = 0; i < 30; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("the match gravity toggle must reach dead fighters", startY,
+                corpse.body.y[Ragdoll.HIPS], 0.001f);
+    }
+
+    @Test
+    public void synthesizedAudioUsesSignedPcmAmplitude() {
+        for (int id : new int[]{SoundFx.HIT, SoundFx.KO, SoundFx.THROW}) {
+            short[] samples = SoundFx.build(id);
+            short min = Short.MAX_VALUE;
+            short max = Short.MIN_VALUE;
+            for (short sample : samples) {
+                min = (short) Math.min(min, sample);
+                max = (short) Math.max(max, sample);
+            }
+            assertTrue("sound " + id + " should retain negative PCM amplitude", min < -1000);
+            assertTrue("sound " + id + " should retain positive PCM amplitude", max > 1000);
+        }
+    }
+
+    @Test
+    public void projectileSweepDetectsThinPlatforms() {
+        android.graphics.RectF ledge = new android.graphics.RectF(100f, 100f, 104f, 120f);
+        Projectile fast = new Projectile(6, 0, 50f, 110f, 6000f, 0f);
+        fast.update(1f / 60f); // crosses the whole 4px ledge in a single frame
+        float entry = Projectile.segmentRectEntry(ledge,
+                fast.prevX, fast.prevY, fast.x, fast.y, fast.r);
+        assertTrue("continuous collision should catch a tunneled arrow", entry >= 0f && entry <= 1f);
+        assertTrue("a distant segment should miss", Projectile.segmentRectEntry(
+                ledge, 40f, 60f, 50f, 60f, fast.r) < 0f);
+        assertEquals("fighter collision should report the circle entry point", 0.4f,
+                Projectile.segmentCircleEntry(50f, 50f, 150f, 50f, 100f, 50f, 10f),
+                0.001f);
+        assertEquals("a projectile should miss a fighter outside its body radius", -1f,
+                Projectile.segmentCircleEntry(50f, 61f, 150f, 61f, 100f, 50f, 10f),
+                0.001f);
+    }
+
+    @Test
+    public void walkingAttackHasWindupStrikeAndRecovery() {
+        Maps.Arena arena = Maps.ALL[3];
+        Fighter f = new Fighter(0, "TEST", 500f, 590f, false);
+        f.reset(500f, 590f);
+        f.spawnT = 0f;
+        f.giveWeapon(Weapons.SWORD);
+        f.aimX = 1f;
+        f.aimY = 0f;
+        f.facing = 1;
+        f.attackDur = 0.6f;
+        f.attacking = true;
+
+        f.attackT = 0.56f;
+        f.update(1f / 60f, arena, true, true);
+        float windupAngle = f.weaponAngle;
+        f.attackT = 0.30f;
+        f.update(1f / 60f, arena, true, true);
+        float strikeAngle = f.weaponAngle;
+        f.attackT = 0.05f;
+        f.update(1f / 60f, arena, true, true);
+        float recoveryAngle = f.weaponAngle;
+
+        assertTrue("sword should pull back before the slash", windupAngle < -0.3f);
+        assertTrue("strike should swing through the aim line", strikeAngle > 0.7f);
+        assertTrue("recovery should bring the blade back toward aim",
+                Math.abs(recoveryAngle) < 0.25f);
+    }
+
+    @Test
+    public void crouchKeepsFeetOnThePlatform() {
+        Maps.Arena arena = Maps.ALL[3];
+        Fighter f = new Fighter(0, "TEST", 500f, 590f, false);
+        f.reset(500f, 590f);
+        f.spawnT = 0f;
+        f.shieldHeld = true;
+        f.update(1f / 60f, arena, true, false);
+
+        assertTrue("down direction should crouch when energy shield is disabled", f.crouch);
+        assertTrue("squashing the pose must not lift the feet off the floor",
+                f.body.y[Ragdoll.FOOT_L] >= f.y + Fighter.FEET - 2f);
+        assertTrue("crouch should visibly lower the head profile",
+                f.y - (f.body.y[Ragdoll.HEAD] - Fighter.HEAD_RADIUS) < Fighter.HEAD);
     }
 
     @Test
@@ -606,6 +740,52 @@ public class SmokeTest {
     }
 
     @Test
+    public void bossTournamentProgressesThroughAllFiveBosses() {
+        boot();
+        int coinsBefore = game.profile.coins;
+        game.debugStartMatch(3, 0);
+        assertEquals("first tournament boss loads", "IRONCLAD", game.debugFighter(1).name);
+        assertTrue("bosses have a larger health pool than a normal CPU",
+                game.debugFighter(1).maxHealth > 100f);
+        game.debugFighter(0).maxHealth = 10000f;
+        game.debugFighter(0).health = 10000f;
+        game.debugStartFight();
+
+        for (int boss = 0; boss < 5; boss++) {
+            assertEquals("boss order is sequential", boss, game.debugBossIndex());
+            game.debugFighter(1).kill(0f);
+            game.tick(1f / 60f);
+            assertEquals("each clean K.O. advances tournament progress", boss + 1,
+                    game.debugBossesDefeated());
+            if (boss < 4) {
+                assertEquals("next boss has a distinct break phase", 5, game.debugPhase());
+                step(126);
+                assertEquals("the next boss returns the match to combat", 1, game.debugPhase());
+            }
+        }
+        step(100);
+        assertEquals("defeating the final boss reaches results", RESULT_SCREEN, game.debugScreen());
+        assertEquals("five boss rewards plus tournament victory bonus", coinsBefore + 225,
+                game.profile.coins);
+    }
+
+    @Test
+    public void bossMutualKoIsDefeatWithoutBossReward() {
+        boot();
+        int coinsBefore = game.profile.coins;
+        game.debugStartMatch(3, 0);
+        game.debugStartFight();
+        game.debugFighter(0).kill(0f);
+        game.debugFighter(1).kill(0f);
+        game.tick(1f / 60f);
+
+        assertEquals("a mutual K.O. ends the tournament", 3, game.debugPhase());
+        assertEquals("a mutual K.O. awards no boss progress", 0, game.debugBossesDefeated());
+        assertEquals("only the ordinary defeat reward is granted", coinsBefore + 15,
+                game.profile.coins);
+    }
+
+    @Test
     public void countdownLocksInputAndClearsStaleMotion() {
         boot();
         game.debugStartMatch(1, 3);
@@ -631,7 +811,7 @@ public class SmokeTest {
         boot();
         game.profile.voice = false;
         host.announcements = 0;
-        tap(1020, 330); // Arsenal
+        tap(1020, 390); // Arsenal
         tap(175, 166);  // equip Fists: normally announces the weapon name
         assertEquals("voice-off must suppress UI announcements", 0, host.announcements);
         game.debugStartMatch(0, 0);
@@ -652,6 +832,45 @@ public class SmokeTest {
         game.pointerUp(1, 280, 600);
         assertTrue("release should start the sword dash", p.attacking);
         assertTrue("release should start the skill cooldown", p.abilityT > 0f);
+    }
+
+    @Test
+    public void cancelledTouchDoesNotTriggerSkill() {
+        boot();
+        game.debugStartMatch(1, 3);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        p.spawnT = 0f;
+        p.giveWeapon(1);
+        p.abilityT = 0f;
+
+        game.pointerDown(4, 140, 600);
+        game.pointerMove(4, 280, 600);
+        game.pointerCancel();
+        game.tick(1f / 60f);
+
+        assertFalse("cancel should not start a release skill", p.attacking);
+        assertEquals("cancel should not consume the skill cooldown", 0f, p.abilityT, 0.001f);
+    }
+
+    @Test
+    public void releaseUsesFinalTouchPositionForSkillDirection() {
+        boot();
+        game.debugStartMatch(1, 3);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        p.spawnT = 0f;
+        p.giveWeapon(1);
+        p.abilityT = 0f;
+
+        game.pointerDown(5, 140, 600);
+        game.pointerMove(5, 280, 600); // stale direction would be right
+        game.pointerUp(5, 140, 550);   // actual release is mostly upward
+
+        assertTrue("release should start the sword dash", p.attacking);
+        assertTrue("the release point should set an upward dash", p.vy < -600f);
+        assertTrue("vertical direction should win over the stale rightward move",
+                Math.abs(p.vy) > Math.abs(p.vx));
     }
 
     @Test
@@ -686,6 +905,38 @@ public class SmokeTest {
     }
 
     @Test
+    public void fastSwordSlashHitsAcrossItsSweptPath() {
+        boot();
+        game.debugStartMatch(1, 3);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        Fighter foe = game.debugFighter(1);
+        p.spawnT = 0f;
+        foe.spawnT = 0f;
+        p.giveWeapon(Weapons.SWORD);
+        p.x = 450f;
+        p.y = 590f;
+        foe.x = 560f;
+        foe.y = 590f;
+        game.tick(1f / 60f); // initialize the active bodies at the start pose
+
+        // Move the attacking stickman 200 px in one frame. The foe sits between
+        // the old and new sword segments, not under either endpoint segment.
+        p.vx = 12000f;
+        p.facing = 1;
+        p.aimX = 1f;
+        p.aimY = 0f;
+        p.attacking = true;
+        p.attackDur = 0.4f;
+        p.attackT = 0.20f;
+        p.hitThisSwing = false;
+        float health = foe.health;
+        game.tick(1f / 60f);
+
+        assertTrue("the sword sweep should hit a foe crossed between frames", foe.health < health);
+    }
+
+    @Test
     public void meleeContactFollowsWeaponDirection() {
         boot();
         game.debugStartMatch(1, 3);
@@ -696,8 +947,8 @@ public class SmokeTest {
         p.spawnT = 0f;
         foe.spawnT = 0f;
         p.giveWeapon(1);
-        game.pointerDown(1, 140, 600);
-        game.pointerMove(1, 140, 550); // up, but below the jump threshold
+        game.pointerDown(1, 123, 600);
+        game.pointerMove(1, 123, 550); // straight up, but below the jump threshold
 
         p.x = 500f;
         p.y = 590f;

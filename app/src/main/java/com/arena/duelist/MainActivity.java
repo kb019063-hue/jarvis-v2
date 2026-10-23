@@ -1,8 +1,11 @@
 package com.arena.duelist;
 
 import android.app.Activity;
+import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.view.WindowInsets;
@@ -93,8 +96,23 @@ public final class MainActivity extends Activity {
     }
 
     static void buzz(View v, int ms) {
+        if (v == null || ms <= 0) {
+            return;
+        }
         try {
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            Vibrator vibrator = (Vibrator) v.getContext()
+                    .getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                vibrator.vibrate(VibrationEffect.createOneShot(
+                        ms, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                // Minimum supported SDK is 24; this deprecated overload is the
+                // compatible duration-based API for Android 7.x.
+                vibrator.vibrate(ms);
+            }
         } catch (Throwable ignored) {
         }
     }

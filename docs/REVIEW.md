@@ -6,9 +6,9 @@
 
 ## Verdict
 
-This repository contains a real native Android game with original Java code, Canvas artwork, synthesized sound, active ragdoll bodies, three modes, twelve weapons and ten arenas. It is **not an exact recreation or a completed port** of Neron's Brother's *Supreme Duelist Stickman*.
+This repository contains a real native Android game with original Java code, Canvas artwork, synthesized sound, active ragdoll bodies, four modes, twelve weapons and ten arenas. It is **not an exact recreation or a completed port** of Neron's Brother's *Supreme Duelist Stickman*.
 
-The repair pass corrected confirmed match, persistence, input, audio, physics and combat defects and moved the controls closer to the original's one-stick design. Those changes do not fill the original's content and mode gaps. The result must not be described as full parity.
+The repair pass corrected confirmed match, persistence, input, audio, physics and combat defects and moved the controls closer to the original's one-stick design. The new boss tournament is an independent five-fight mode, not a reproduction of the reference mode; major content and mode gaps remain. The result must not be described as full parity.
 
 Reference baseline: the [official Play Store listing](https://play.google.com/store/apps/details?id=com.Neurononfire.SupremeDuelist), the [community wiki](https://supreme-duelist-community-wiki.fandom.com/wiki/Supreme_Duelist_Stickman), and the control description on [Uptodown](https://supreme-duelist.en.uptodown.com/android). Original-game feature totals can change between releases; the comparison here is a reference snapshot, not a claim to have reproduced a particular proprietary build.
 
@@ -20,7 +20,7 @@ Reference baseline: the [official Play Store listing](https://play.google.com/st
 - Holding a direction now moves, aims and performs basic attacks; up jumps, down shields/crouches, and releasing a charged direction activates the weapon skill.
 - Added distinct release-skill implementations for all twelve current weapons, with per-weapon cooldowns and visible charge rings/labels.
 - Routed rendered weapon orientation and melee contact through the same angle and physical hand/tip geometry.
-- Replaced broad melee rectangles with current weapon-segment-to-body-joint contact tests. This is an improvement in directional contact, not a claim of continuous swept collision or the original's exact physics.
+- Melee collision follows the rendered weapon segment and body joints, sampling six interpolated segment poses per frame so quick swings can connect. This is an approximation, not a full continuous swept solver or the original's exact physics.
 - Added CPU use of release skills and updated the in-game instructions and arsenal text.
 
 ### Match and state correctness
@@ -28,10 +28,19 @@ Reference baseline: the [official Play Store listing](https://play.google.com/st
 - Newly purchased starter weapons are saved **after** the starter field changes, so they survive recreation of `Profile`.
 - A double K.O. awards no round point and replays the round; a 1–1 draw can no longer turn into a contradictory tied defeat.
 - Survival checks player death before enemy death, so a mutual K.O. cannot award a wave or spawn another enemy before defeat.
+- Added a playable five-boss tournament: each custom boss has a themed name/color, signature weapon and increasing health; clean wins grant coins, restore some player health/shield between bouts, and the final K.O. awards the tournament victory. A mutual K.O. is a loss. This is original content, not verified parity with the reference game's boss mode.
 - Countdown and post-round simulation reject gameplay input and clear stale movement/action state.
 - Round transitions clear projectiles and held controls, preventing post-K.O. hits and accidental skill releases.
 - Menu transitions clear stale hitboxes; Android Back now does the same before the next frame is drawn.
 - The arena picker, pause-to-arena flow, purchase/reset confirmations and Survival scaling fixes from the earlier review remain in place.
+
+### Character look and combat feel
+
+- Matched the default combat palette to bright green/yellow stick figures, removed the face dot and shoe-like foot accents, and gave the bright default skins clean dark outlines. The live body and customization preview now use the same joint renderer; optional custom hair remains.
+- Added a subtle counter-swinging gait/body bob, kept crouched feet on the floor while shortening the crouch hitbox, and replaced the constant melee arc with per-weapon wind-up, strike and follow-through poses.
+- Basic melee strikes now take a small weapon-weighted step; fist hit reach is tied to the visible hand instead of an invisible extra-long hit line.
+- Sampled the rendered weapon segment through each frame for quick melee sweeps, and attach the held weapon to the forearm during ragdoll falls.
+- These are original procedural changes guided by public gameplay references, not a claim that the proprietary art or physics have been reproduced exactly.
 
 ### Timing, AI and presentation
 
@@ -47,34 +56,41 @@ Reference baseline: the [official Play Store listing](https://play.google.com/st
 
 ## Regression suite
 
-`app/src/test/java/com/arena/duelist/SmokeTest.java` contains **26 authored Robolectric tests**, not merely 26 assertions. The suite covers:
+`app/src/test/java/com/arena/duelist/SmokeTest.java` contains **38 authored Robolectric tests**. The suite covers:
 
 1. Menu-to-match flow and rendered quick-match frames.
 2. Local Duel and Survival flow.
-3. Menu reachability, two-tap purchase and starter persistence.
+3. Menu reachability, Boss Tournament access, two-tap purchase and starter persistence.
 4. Android Back clearing stale menu hitboxes.
-5. K.O. ragdoll creation.
-6. Ragdoll settling and finite joints.
-7. Standing active-body pose tracking.
-8. Light-hit flop and recovery with AI input isolated.
-9. Heavy-hit knockdown, recovery and invulnerability.
-10. Four-jab poise break.
-11. Downed fighters ignoring input.
-12. Ragdoll stability in every arena.
-13. Equivalent ragdoll motion at 30 and 60 updates per second.
-14. CPU lava retreat without a panic jump when no route exists.
-15. Jumping through and landing on a reachable thin ledge.
-16. First-map opening CPU survival, no jump loop, and actual engagement.
-17. CPU opening survival in every hazard arena.
-18. Second-based projectile lifetime at different update rates.
-19. Double-K.O. replay without a point.
-20. Survival mutual-K.O. defeat without a phantom wave.
-21. Countdown input lockout and stale-action clearing.
-22. Voice-off suppression of UI and match speech.
-23. Real pointer release activating a weapon skill.
-24. A concrete effect for every one of the twelve weapon skills.
-25. Upward melee contact following the weapon direction.
-26. Rendering every arena and weapon combination.
+5. K.O. ragdoll creation, settling and held-weapon rendering.
+6. Ragdoll joints remaining finite.
+7. Gravity-off fighter and ragdoll behavior, including dead bodies in a match.
+8. Signed PCM audio amplitude conversion.
+9. Swept projectile collision with thin platforms.
+10. Standing active-body pose tracking.
+11. Light-hit flop and recovery with AI input isolated.
+12. Heavy-hit knockdown, recovery and invulnerability.
+13. Four-jab poise break and downed fighters ignoring input.
+14. Crouch pose keeping the feet on the platform.
+15. Ragdoll stability in every arena.
+16. Equivalent ragdoll motion at 30 and 60 updates per second.
+17. CPU lava retreat without a panic jump when no route exists.
+18. Jumping through and landing on a reachable thin ledge.
+19. First-map opening CPU survival, no jump loop, and actual engagement.
+20. CPU opening survival in every hazard arena.
+21. Second-based projectile lifetime at different update rates.
+22. Double-K.O. replay without a point.
+23. Survival mutual-K.O. defeat without a phantom wave.
+24. Five-boss tournament order, break transitions, rewards, final victory and mutual-K.O. loss handling.
+25. Countdown input lockout and stale-action clearing.
+26. Voice-off suppression of UI and match speech.
+27. Real pointer release activating a weapon skill.
+28. Cancellation not activating a skill and final touch coordinates setting its direction.
+29. A concrete effect for every one of the twelve weapon skills.
+30. Weapon swing wind-up, strike and recovery poses.
+31. Fast sword contact across the sampled swing path.
+32. Upward melee contact following the weapon direction.
+33. Rendering every arena and weapon combination.
 
 The same suite writes actual rendered PNGs to `docs/screenshots` through CI. These images expose layout/rendering regressions, but they do not prove touch latency, device performance or gameplay feel.
 
@@ -95,7 +111,7 @@ The same suite writes actual rendered PNGs to `docs/screenshots` through CI. The
 | Same-device two-player duel | Present | Present |
 | 3–4 player party matches | Advertised | Absent |
 | Survival | Present | Present, with different balancing |
-| Football, boss tournament and additional modes | Advertised | Absent |
+| Football and additional modes | Advertised | Football/other modes absent; an independently designed five-boss tournament is present, but reference-mode parity is unverified |
 | Map editor | Advertised | Absent |
 | Wi-Fi/LAN multiplayer | Advertised | Absent |
 | Content scale | Much larger weapon/map roster | 12 weapons / 10 arenas |
@@ -107,7 +123,7 @@ The same suite writes actual rendered PNGs to `docs/screenshots` through CI. The
 
 1. Test the APK on physical phones/tablets, especially simultaneous two-player touches, small screens, notches and lower-end GPUs.
 2. Add 3–4 player matches only after refactoring the current two-fighter assumptions in combat, HUD and round logic.
-3. Add the missing modes and map editor as separate, tested systems rather than menu-only placeholders.
+3. Add football, other missing modes and the map editor as separate tested systems; do not treat the independent boss tournament as reference-equivalent without validation.
 4. Expand the weapon/map roster and tune against captured original gameplay if exact fidelity is required.
 5. Add LAN discovery/transport and deterministic/session reconciliation before claiming Wi-Fi multiplayer.
 6. Add production signing, adaptive/store icons and a release-testing matrix before any store distribution.

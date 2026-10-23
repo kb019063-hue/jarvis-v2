@@ -38,11 +38,26 @@ public final class Game {
     private static final int PH_ROUND_END = 2;
     private static final int PH_MATCH_END = 3;
     private static final int PH_SURVIVAL_BREAK = 4;
+    private static final int PH_BOSS_BREAK = 5;
 
     // modes
     private static final int M_QUICK = 0;
     private static final int M_LOCAL = 1;
     private static final int M_SURVIVAL = 2;
+    private static final int M_BOSS = 3;
+    private static final int PLAYER_COLOR = 0xFF48E879;
+    private static final int CPU_COLOR = 0xFFFFE52E;
+
+    private static final String[] BOSS_NAMES = {
+            "IRONCLAD", "SKY LANCER", "NIGHTFALL", "VOID WITCH", "THE OVERLORD"
+    };
+    private static final int[] BOSS_WEAPONS = {
+            Weapons.HAMMER, Weapons.SPEAR, Weapons.DUAL_SABERS, Weapons.WAND, Weapons.ENERGY_BLADE
+    };
+    private static final int[] BOSS_COLORS = {
+            0xFFB8C0CC, 0xFF51E5FF, 0xFFB28BFF, 0xFFD9A0FF, 0xFFFF6B8A
+    };
+    private static final float[] BOSS_HEALTH = {130f, 150f, 170f, 195f, 225f};
 
     // actions
     private static final int A_NONE = 0;
@@ -60,6 +75,7 @@ public final class Game {
     private static final int A_MENU = 12;
     private static final int A_HOW = 13;
     private static final int A_MAPS_FROM_PAUSE = 14;
+    private static final int A_BOSS = 15;
     private static final int A_SOUND = 20;
     private static final int A_VOICE = 21;
     private static final int A_GRAVITY = 22;
@@ -97,6 +113,8 @@ public final class Game {
     private int roundWinsB;
     private boolean roundDraw;
     private int wave = 1;
+    private int bossIndex;
+    private int bossesDefeated;
     private boolean paused;
     private boolean countAnnounced;
     private int lastCount = -1;
@@ -138,11 +156,11 @@ public final class Game {
         fighters[1] = new Fighter(1, "CPU", 920, 520, true);
         fighters[0].color = profile.skinColor;
         fighters[0].hair = profile.hairStyle;
-        fighters[1].hair = 1;
+        fighters[1].hair = 0;
         resetMatch(M_QUICK, 0, false);
     }
 
-    public void resize(int pw, int ph) {
+    public synchronized void resize(int pw, int ph) {
         if (pw <= 0 || ph <= 0) {
             return;
         }
@@ -168,7 +186,7 @@ public final class Game {
 
     // ------------------------------------------------------------------ input
 
-    public void pointerDown(int id, float sx, float sy) {
+    public synchronized void pointerDown(int id, float sx, float sy) {
         float x = sx / scale;
         float y = sy / scale;
 
@@ -215,24 +233,38 @@ public final class Game {
         handleMenuTap(x, y);
     }
 
-    public void pointerMove(int id, float sx, float sy) {
+    public synchronized void pointerMove(int id, float sx, float sy) {
         float x = sx / scale;
         float y = sy / scale;
         stickA.move(id, x, y);
         stickB.move(id, x, y);
     }
 
-    public void pointerUp(int id, float sx, float sy) {
-        if (screen == S_PLAY && !paused && phase == PH_FIGHT) {
-            if (stickA.pointer == id) {
+    public synchronized void pointerUp(int id, float sx, float sy) {
+        float x = sx / scale;
+        float y = sy / scale;
+        if (stickA.pointer == id) {
+            // ACTION_UP can carry a newer position than the last MOVE event.
+            // Sample it before interpreting the release direction.
+            stickA.move(id, x, y);
+            if (screen == S_PLAY && !paused && phase == PH_FIGHT) {
                 useAbility(fighters[0], stickA.dx, stickA.dy);
             }
-            if (mode == M_LOCAL && stickB.pointer == id) {
+        }
+        if (mode == M_LOCAL && stickB.pointer == id) {
+            stickB.move(id, x, y);
+            if (screen == S_PLAY && !paused && phase == PH_FIGHT) {
                 useAbility(fighters[1], stickB.dx, stickB.dy);
             }
         }
         stickA.release(id);
         stickB.release(id);
+    }
+
+    /** A cancelled gesture releases all sticks but is not a deliberate skill flick. */
+    public synchronized void pointerCancel() {
+        stickA.release();
+        stickB.release();
     }
 
     private void handleMenuTap(float x, float y) {
@@ -314,6 +346,10 @@ public final class Game {
                 break;
             case A_SURVIVAL:
                 pendingMode = M_SURVIVAL;
+                screen = S_MAPS;
+                break;
+            case A_BOSS:
+                pendingMode = M_BOSS;
                 screen = S_MAPS;
                 break;
             case A_ARSENAL:
@@ -404,7 +440,7 @@ public final class Game {
         }
     }
 
-    public boolean backPressed() {
+    public synchronized boolean backPressed() {
         if (screen == S_PLAY) {
             if (paused) {
                 screen = S_TITLE;
@@ -429,7 +465,7 @@ public final class Game {
 
     // ------------------------------------------------------------------- loop
 
-    public void tick(float dt) {
+    public synchronized void tick(float dt) {
         if (dt <= 0f) {
             return;
         }
@@ -476,12 +512,16 @@ public final class Game {
         fighters[0].name = "P1";
         fighters[0].color = profile.skinColor;
         fighters[0].hair = profile.hairStyle;
-        fighters[1].color = 0xFFE9E9F2;
-        fighters[1].hair = 1;
+        fighters[1].color = CPU_COLOR;
+        fighters[1].hair = 0;
         fighters[1].accent = 0xFFFF4D6D;
         fighters[0].accent = 0xFF4D9BFF;
         fighters[0].giveWeapon(profile.starter);
-        fighters[1].giveWeapon(rndWeapon());
+        if (newMode == M_BOSS) {
+            spawnBoss(0);
+        } else {
+            fighters[1].giveWeapon(rndWeapon());
+        }
         if (newMode == M_SURVIVAL) {
             // same formula spawnWave() uses, so wave 1 is not the hardest wave
             float hpm = 70f + 18f;
@@ -497,6 +537,8 @@ public final class Game {
         roundDraw = false;
         roundNumber = 1;
         wave = 1;
+        bossIndex = 0;
+        bossesDefeated = 0;
         spawnTimer = 2.5f;
         phase = PH_INTRO;
         // 3.4s so the overlay really counts 3 - 2 - 1; with 2.6s the "3" was
@@ -518,6 +560,34 @@ public final class Game {
             return Weapons.FIST;
         }
         return 1 + rnd.nextInt(Weapons.COUNT - 1);
+    }
+
+    private void spawnBoss(int index) {
+        int idx = Math.max(0, Math.min(BOSS_NAMES.length - 1, index));
+        bossIndex = idx;
+        Fighter boss = fighters[1];
+        float bx = Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET);
+        boss.reset(bx, arena.spawnBy);
+        boss.maxHealth = BOSS_HEALTH[idx] + profile.difficulty * 12f;
+        boss.health = boss.maxHealth;
+        boss.color = BOSS_COLORS[idx];
+        boss.accent = BOSS_COLORS[idx];
+        boss.hair = 0;
+        boss.name = BOSS_NAMES[idx];
+        boss.cpu = true;
+        boss.giveWeapon(BOSS_WEAPONS[idx]);
+        cpu.reset();
+    }
+
+    private void spawnNextBoss() {
+        spawnBoss(bossesDefeated);
+        Fighter player = fighters[0];
+        player.health = Math.min(player.maxHealth, player.health + 28f);
+        player.shield = player.maxShield;
+        player.abilityT = Math.min(player.abilityT, 0.7f);
+        phase = PH_FIGHT;
+        spawnTimer = 3f;
+        shake = 8f;
     }
 
     // ------------------------------------------------------------------ match
@@ -554,6 +624,12 @@ public final class Game {
                 updateWorldFx(dt);
                 if (phaseT <= 0) {
                     spawnWave();
+                }
+                break;
+            case PH_BOSS_BREAK:
+                updateWorldFx(dt);
+                if (phaseT <= 0) {
+                    spawnNextBoss();
                 }
                 break;
             case PH_MATCH_END:
@@ -640,6 +716,14 @@ public final class Game {
             } else if (b.dead && phase == PH_FIGHT) {
                 onEnemyDown();
             }
+        } else if (mode == M_BOSS) {
+            // Tournament progression only counts a clean boss takedown. A
+            // simultaneous player K.O. remains a loss, as in Survival.
+            if (a.dead && phase == PH_FIGHT) {
+                endMatch(false);
+            } else if (b.dead && phase == PH_FIGHT) {
+                onBossDown();
+            }
         } else {
             if ((a.dead || b.dead) && phase == PH_FIGHT) {
                 onRoundEnd(a.dead);
@@ -654,7 +738,8 @@ public final class Game {
             applyStick(fighters[1], stickB);
         } else if (fighters[1].cpu) {
             Fighter b = fighters[1];
-            int lvl = mode == M_SURVIVAL ? Math.min(3, 1 + wave / 3) : profile.difficulty;
+            int lvl = mode == M_SURVIVAL ? Math.min(3, 1 + wave / 3)
+                    : (mode == M_BOSS ? Math.min(3, profile.difficulty + 1) : profile.difficulty);
             cpu.think(b, a, arena, dt, lvl);
             boolean attack = cpu.attack();
             boolean special = attack && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
@@ -872,7 +957,7 @@ public final class Game {
         float hy = a.handY();
         float tx = a.tipX();
         float ty = a.tipY();
-        float contact = weaponContactDistance(b, hx, hy, tx, ty);
+        float contact = sweptWeaponContactDistance(a, b, hx, hy, tx, ty);
         if (contact > 23f) {
             return;
         }
@@ -882,8 +967,9 @@ public final class Game {
         float boost = a.swingBoost > 0f ? a.swingBoost : 1f;
         float damage = d.damage * boost;
         boolean shielded = b.shieldOn && b.shield > 0;
-        float kx = (float) Math.cos(a.weaponAngle) * d.knock * boost;
-        float ky = (float) Math.sin(a.weaponAngle) * d.knock * 0.45f
+        float attackAngle = a.currentWeaponAngle();
+        float kx = (float) Math.cos(attackAngle) * d.knock * boost;
+        float ky = (float) Math.sin(attackAngle) * d.knock * 0.45f
                 - 90f - d.knock * 0.12f;
         b.facing = kx >= 0f ? 1 : -1;
         b.damage(damage, kx, ky, false);
@@ -910,6 +996,33 @@ public final class Game {
         }
     }
 
+    /**
+     * Minimum body distance across the blade's segment over the previous frame.
+     * Sampling the interpolated segment catches quick slashes and dash attacks
+     * that would otherwise tunnel between two 60 Hz collision checks.
+     */
+    private float sweptWeaponContactDistance(Fighter attacker, Fighter target,
+                                             float hx, float hy, float tx, float ty) {
+        if (!attacker.prevWeaponPoseValid) {
+            return weaponContactDistance(target, hx, hy, tx, ty);
+        }
+        float best = Float.MAX_VALUE;
+        final int samples = 6;
+        for (int i = 0; i <= samples; i++) {
+            float t = i / (float) samples;
+            float shx = attacker.prevWeaponHandX
+                    + (hx - attacker.prevWeaponHandX) * t;
+            float shy = attacker.prevWeaponHandY
+                    + (hy - attacker.prevWeaponHandY) * t;
+            float stx = attacker.prevWeaponTipX
+                    + (tx - attacker.prevWeaponTipX) * t;
+            float sty = attacker.prevWeaponTipY
+                    + (ty - attacker.prevWeaponTipY) * t;
+            best = Math.min(best, weaponContactDistance(target, shx, shy, stx, sty));
+        }
+        return best;
+    }
+
     /** Minimum distance from a fighter's body to the current weapon segment. */
     private float weaponContactDistance(Fighter f, float x1, float y1, float x2, float y2) {
         if (f.body == null) {
@@ -921,6 +1034,23 @@ public final class Game {
                     f.body.x[i], f.body.y[i], x1, y1, x2, y2));
         }
         return best;
+    }
+
+    /** Swept projectile test against the torso or each actual ragdoll joint. */
+    private float projectileContactT(Fighter f, Projectile p) {
+        if (f.body == null) {
+            return Projectile.segmentCircleEntry(p.prevX, p.prevY, p.x, p.y,
+                    f.x, f.y - 6f, p.r + 24f);
+        }
+        float first = Float.MAX_VALUE;
+        for (int i = 0; i < Ragdoll.N; i++) {
+            float t = Projectile.segmentCircleEntry(p.prevX, p.prevY, p.x, p.y,
+                    f.body.x[i], f.body.y[i], p.r + f.body.collisionRadius(i));
+            if (t >= 0f) {
+                first = Math.min(first, t);
+            }
+        }
+        return first == Float.MAX_VALUE ? -1f : first;
     }
 
     private float pointSegmentDistance(float px, float py,
@@ -974,10 +1104,15 @@ public final class Game {
                 }
             }
 
-            // platform collision
+            // Sweep the projectile path for this frame; point-only checks let
+            // fast shots tunnel through thin platforms at low frame rates.
             boolean hitWall = false;
             for (int k = 0; k < arena.platforms.size(); k++) {
-                if (arena.platforms.get(k).r.contains(p.x, p.y)) {
+                float impactT = Projectile.segmentRectEntry(arena.platforms.get(k).r,
+                        p.prevX, p.prevY, p.x, p.y, p.r);
+                if (impactT >= 0f) {
+                    p.x = p.prevX + (p.x - p.prevX) * impactT;
+                    p.y = p.prevY + (p.y - p.prevY) * impactT;
                     hitWall = true;
                     break;
                 }
@@ -993,14 +1128,16 @@ public final class Game {
             }
 
             if (!p.dead && !foe.dead && p.owner != foe.id) {
-                float dx = foe.x - p.x;
-                float dy = (foe.y - 6f) - p.y;
-                float rr = p.r + 24f;
                 // A boomerang survives its hit, so it is capped to one hit per
                 // pass and two per throw. Without this it re-hit every frame it
                 // overlapped - six hits for a single throw.
                 boolean canHit = p.special != 3 || (!p.hitThisPass && p.hitCount < 2);
-                if (canHit && dx * dx + dy * dy < rr * rr) {
+                float hitT = canHit ? projectileContactT(foe, p) : -1f;
+                if (hitT >= 0f) {
+                    // Place the impact at first contact on this frame's path,
+                    // not beyond the fighter on a fast frame.
+                    p.x = p.prevX + (p.x - p.prevX) * hitT;
+                    p.y = p.prevY + (p.y - p.prevY) * hitT;
                     if (p.special == 3) {
                         p.hitCount++;
                         p.hitThisPass = true;
@@ -1110,7 +1247,7 @@ public final class Game {
             Maps.Hazard hz = arena.hazards.get(i);
             RectF r = hz.r;
             float halfW = f.down ? 30f : Fighter.HALF_W;
-            float top = f.down ? 16f : Fighter.HEAD;
+            float top = f.down ? 16f : (f.crouch ? Fighter.CROUCH_HEAD : Fighter.HEAD);
             float bot = f.down ? 16f : Fighter.FEET;
             boolean inside = f.x + halfW > r.left && f.x - halfW < r.right
                     && f.y + bot > r.top && f.y - top < r.bottom;
@@ -1207,6 +1344,27 @@ public final class Game {
         }
     }
 
+    private void onBossDown() {
+        shots.clear();
+        pickups.clear();
+        releaseControls();
+        bossesDefeated++;
+        profile.addCoins(25);
+        fx.floatText(fighters[1].x, fighters[1].y - 60f, "+25", 0xFFFFD166);
+        shake = 10f;
+        sfx(SoundFx.KO);
+        host.vibrate(65);
+        if (bossesDefeated >= BOSS_NAMES.length) {
+            endMatch(true);
+            return;
+        }
+        phase = PH_BOSS_BREAK;
+        phaseT = 2.0f;
+        if (profile.voice) {
+            announce(BOSS_NAMES[bossIndex] + " defeated");
+        }
+    }
+
     private void spawnWave() {
         Fighter p = fighters[0];
         Fighter e = fighters[1];
@@ -1221,7 +1379,7 @@ public final class Game {
                 arena.spawnBy);
         e.maxHealth = hpm;
         e.health = hpm;
-        e.color = 0xFFE9E9F2;
+        e.color = CPU_COLOR;
         e.accent = 0xFFFF4D6D;
         e.giveWeapon(rndWeapon());
         e.name = "WAVE " + wave;
@@ -1237,7 +1395,7 @@ public final class Game {
         phaseT = 1.3f;
         if (won) {
             resultTitle = "VICTORY";
-            resultCoins = mode == M_SURVIVAL ? 40 : 70;
+            resultCoins = mode == M_SURVIVAL ? 40 : (mode == M_BOSS ? 100 : 70);
             profile.wins++;
             profile.streak++;
             profile.bestStreak = Math.max(profile.bestStreak, profile.streak);
@@ -1249,6 +1407,9 @@ public final class Game {
         }
         if (mode == M_SURVIVAL) {
             resultSub = "Reached wave " + wave + "  ·  " + (wave - 1) + " takedowns";
+        } else if (mode == M_BOSS) {
+            resultSub = "Bosses defeated " + bossesDefeated + "/" + BOSS_NAMES.length
+                    + "  ·  " + arena.name;
         } else {
             resultSub = "Rounds " + roundWinsA + " - " + roundWinsB + "  ·  " + arena.name;
         }
@@ -1315,7 +1476,10 @@ public final class Game {
             if (body == null || !f.ragdolled()) {
                 continue; // standing bodies are stepped by Fighter.update
             }
-            body.update(dt, arena);
+            body.facing = f.facing;
+            body.hair = f.hair;
+            body.accent = f.accent;
+            body.update(dt, arena, null, null, 0f, profile.gravity ? 1f : 0f);
 
             if (f.down) {
                 // the hips are the fighter's real position while it is prone, so
@@ -1427,7 +1591,7 @@ public final class Game {
 
     // ------------------------------------------------------------------ draw
 
-    public void draw(Canvas canvas) {
+    public synchronized void draw(Canvas canvas) {
         Painter g = new Painter(canvas);
         canvas.drawColor(0xFF0B0F17);
 
@@ -1499,6 +1663,7 @@ public final class Game {
             if (f.ragdolled()) {
                 if (f.body != null) {
                     f.body.draw(g);
+                    f.drawRagdollWeapon(g);
                 }
                 continue;
             }
@@ -1722,6 +1887,13 @@ public final class Game {
             g.size(roundDraw ? 62 : 84);
             g.textShadowCenter(roundDraw ? "DOUBLE K.O." : "K.O.",
                     viewW / 2, viewH / 2, 0xFFFF6B8A, 5);
+        } else if (phase == PH_BOSS_BREAK) {
+            g.size(46);
+            g.textShadowCenter("BOSS DEFEATED", viewW / 2, viewH / 2 - 14,
+                    0xFFFFD166, 4);
+            g.size(20);
+            g.textCenter("NEXT: " + BOSS_NAMES[bossesDefeated], viewW / 2,
+                    viewH / 2 + 28, 0xDDEEEEFF);
         }
     }
 
@@ -1737,12 +1909,16 @@ public final class Game {
 
         g.size(15);
         g.align(Paint.Align.CENTER);
-        String mid = mode == M_SURVIVAL ? "WAVE " + wave : "ROUND " + roundNumber;
+        String mid = mode == M_SURVIVAL ? "WAVE " + wave
+                : (mode == M_BOSS ? "BOSS " + (bossIndex + 1) + " / " + BOSS_NAMES.length
+                : "ROUND " + roundNumber);
         g.textCenter(mid, viewW / 2, 40, 0xCCFFFFFF);
-        if (mode != M_SURVIVAL) {
-            g.textCenter(roundWinsA + " - " + roundWinsB, viewW / 2, 62, 0xFFFFE38A);
-        } else {
+        if (mode == M_SURVIVAL) {
             g.textCenter("TAKEDOWNS " + (wave - 1), viewW / 2, 62, 0xFFFFE38A);
+        } else if (mode == M_BOSS) {
+            g.textCenter("DEFEATED " + bossesDefeated, viewW / 2, 62, 0xFFFFE38A);
+        } else {
+            g.textCenter(roundWinsA + " - " + roundWinsB, viewW / 2, 62, 0xFFFFE38A);
         }
         g.align(Paint.Align.LEFT);
         c.restore();
@@ -1812,8 +1988,8 @@ public final class Game {
         float t = time * 2.2f;
         float px1 = viewW * 0.26f + (float) Math.sin(t) * 40f;
         float px2 = viewW * 0.40f + (float) Math.cos(t * 1.1f) * 40f;
-        silhouettes(g, px1, viewH - 120, 1, t);
-        silhouettes(g, px2, viewH - 120, -1, t + 1.7f);
+        silhouettes(g, px1, viewH - 120, 1, t, PLAYER_COLOR);
+        silhouettes(g, px2, viewH - 120, -1, t + 1.7f, CPU_COLOR);
 
         g.size(Math.min(56f, viewW * 0.06f));
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
@@ -1837,27 +2013,35 @@ public final class Game {
         btn(g, bx, by, bw, 52, "QUICK FIGHT", A_QUICK, 0xFFFF6B8A);
         btn(g, bx, by + 60, bw, 52, "LOCAL DUEL  ·  2P", A_LOCAL, 0xFF4D9BFF);
         btn(g, bx, by + 120, bw, 52, "SURVIVAL", A_SURVIVAL, 0xFF9BE86B);
-        btn(g, bx, by + 180, bw, 44, "ARSENAL", A_ARSENAL, 0xFF7D8BFF);
-        btn(g, bx, by + 232, bw, 44, "CUSTOMIZE", A_STYLE, 0xFFFFC46B);
-        btn(g, bx, by + 284, bw, 44, "SETTINGS", A_SETTINGS, 0xFF8A93A8);
-        btn(g, bx - 78, by + 284, 68, 44, "?", A_HOW, 0xFF8A93A8);
+        btn(g, bx, by + 180, bw, 52, "BOSS TOURNAMENT", A_BOSS, 0xFFFF6B8A);
+        btn(g, bx, by + 240, bw, 44, "ARSENAL", A_ARSENAL, 0xFF7D8BFF);
+        btn(g, bx, by + 292, bw, 44, "CUSTOMIZE", A_STYLE, 0xFFFFC46B);
+        btn(g, bx, by + 344, bw, 44, "SETTINGS", A_SETTINGS, 0xFF8A93A8);
+        btn(g, bx - 78, by + 344, 68, 44, "?", A_HOW, 0xFF8A93A8);
 
         g.size(11);
         g.text("Tap a mode to pick your arena", 48, viewH - 24, 0x66FFFFFF);
         c.restore();
     }
 
-    private void silhouettes(Painter g, float x, float y, int face, float t) {
-        int col = 0x22FFFFFF;
+    private void silhouettes(Painter g, float x, float y, int face, float t, int color) {
+        int fill = Painter.withAlpha(color, 112);
+        int edge = 0x6610141D;
         g.c.save();
         g.c.translate(x, y);
         float lean = (float) Math.sin(t) * 4f;
-        g.stroke(0, -34, 0, 10, 7, col);
-        g.circle(0, -46, 13, col);
-        g.stroke(0, -24, lean - 14, 0, 5, col);
-        g.stroke(0, -24, face * 22, -10, 5, col);
-        g.stroke(0, 10, -16, 40, 6, col);
-        g.stroke(0, 10, 16, 40, 6, col);
+        g.stroke(0, -34, 0, 10, 7f, edge);
+        g.stroke(0, -34, 0, 10, 4.5f, fill);
+        g.circle(0, -46, 13.5f, edge);
+        g.circle(0, -46, 11f, fill);
+        g.stroke(0, -24, lean - 14, 0, 5.5f, edge);
+        g.stroke(0, -24, lean - 14, 0, 3f, fill);
+        g.stroke(0, -24, face * 22, -10, 5.5f, edge);
+        g.stroke(0, -24, face * 22, -10, 3f, fill);
+        g.stroke(0, 10, -16, 40, 6f, edge);
+        g.stroke(0, 10, -16, 40, 3.5f, fill);
+        g.stroke(0, 10, 16, 40, 6f, edge);
+        g.stroke(0, 10, 16, 40, 3.5f, fill);
         g.c.restore();
         g.reset();
     }
@@ -1884,7 +2068,10 @@ public final class Game {
         Canvas c = g.c;
         c.save();
         c.scale(scale, scale);
-        header(g, pendingMode == M_LOCAL ? "LOCAL DUEL" : (pendingMode == M_SURVIVAL ? "SURVIVAL" : "QUICK FIGHT"));
+        String mapTitle = pendingMode == M_LOCAL ? "LOCAL DUEL"
+                : (pendingMode == M_SURVIVAL ? "SURVIVAL"
+                : (pendingMode == M_BOSS ? "BOSS TOURNAMENT" : "QUICK FIGHT"));
+        header(g, mapTitle);
         g.size(14);
         g.text("Choose an arena", 42, 96, 0x99FFFFFF);
 
@@ -1976,8 +2163,8 @@ public final class Game {
     }
 
     private static final int[] SKINS = {
-            0xFFF2F2F2, 0xFF2A2A32, 0xFFFF6B8A, 0xFF4D9BFF,
-            0xFF9BE86B, 0xFFFFC46B, 0xFFD9A0FF, 0xFF51E5FF,
+            PLAYER_COLOR, CPU_COLOR, 0xFFF2F2F2, 0xFF2A2A32,
+            0xFFFF6B8A, 0xFF4D9BFF, 0xFFD9A0FF, 0xFF51E5FF,
     };
 
     private static final String[] DIFF_NAMES = {"EASY", "NORMAL", "HARD", "INSANE"};
@@ -2095,6 +2282,7 @@ public final class Game {
                 "Break an opponent's poise and they go DOWN, then recover on their own",
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins · a double K.O. replays without a point",
+                "Boss Tournament: defeat five escalating opponents and recover between fights",
         };
         g.size(14);
         for (int i = 0; i < lines.length; i++) {
@@ -2263,6 +2451,14 @@ public final class Game {
 
     int debugWave() {
         return wave;
+    }
+
+    int debugBossesDefeated() {
+        return bossesDefeated;
+    }
+
+    int debugBossIndex() {
+        return bossIndex;
     }
 
     void debugSuppressPickups() {
