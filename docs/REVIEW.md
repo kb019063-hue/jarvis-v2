@@ -17,6 +17,7 @@ every hit, is absent, and most of its content and party modes are missing.
 |---|---|
 | Native Android app (Java, no engine, no external assets) | `app/src/main/java/com/arena/duelist/*.java`, ~4.4k lines |
 | Builds and tests green | GitHub Actions on this branch — `assembleDebug` + `testDebugUnitTest` success |
+| Tests | 12 Robolectric tests incl. per-arena ragdoll stability, knockdown → recovery, poise, input-lock and the buy-confirm flow |
 | Installable APK | Releases `build-19`–`build-21` → `stick-duelist-<n>.apk`, `minSdk 24` (Android 7.0+) |
 | Screenshots are real frames | `SmokeTest` renders with Robolectric NATIVE graphics to PNG |
 | 10 arenas, 12 weapons, 3 modes, coins/unlocks/settings | `Maps.java`, `Weapons.java`, `Game.java`, `Profile.java` |
@@ -171,7 +172,7 @@ thumb on touch-down and returns to its drawn position on release.
 | 6 | `backPressed()` on the result screen has a pointless ternary (`S_TITLE : S_TITLE`) | Goes to the title instead of the arena picker |
 | 7 | Debug-only APK, `versionCode 1`, no signing config, no adaptive icon | Fine for sideloading, not for a store listing |
 | 8 | `Host.setBright` is implemented but never called | Harmless extension point |
-| 9 | `SmokeTest`'s "CPU difficulty cycles" tap actually lands on the *Voice announcer* row | Test intent ≠ test action; no assertion depends on it |
+| 9 | ~~`SmokeTest` taps missed their buttons~~ | **Fixed**: three taps were 60/6/6 units outside their targets, so the How-to-play and Arsenal screenshots were showing the title screen; the buy-confirm flow is now asserted too |
 
 ## 5. Recommendations, in order
 
