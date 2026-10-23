@@ -19,6 +19,7 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 | ![Arena picker](docs/screenshots/10-arena-picker.png) | ![Arsenal](docs/screenshots/11-arsenal.png) |
 | ![Lava Core](docs/screenshots/08-lava-core.png) | ![Orbital Deck](docs/screenshots/09-orbital-deck.png) |
 | ![Customize](docs/screenshots/14-customize.png) | ![Settings](docs/screenshots/13-settings.png) |
+| ![KO ragdoll](docs/screenshots/16-ragdoll-ko.png) | ![Ragdoll settled](docs/screenshots/17-ragdoll-settled.png) |
 
 ## What's in it
 
