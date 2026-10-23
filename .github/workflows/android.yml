@@ -93,6 +93,8 @@ jobs:
             grep -E "BUILD SUCCESSFUL|PASSED|FAILED|tests completed" build.log | head -20
             ls -lh app/build/outputs/apk/debug/*.apk | awk '{print $5, $9}'
             echo '```'
+            echo "screenshots:"
+            ls -la app/build/screenshots 2>&1 | head -15
           } > /tmp/summary.md
           gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
             -f body="$(cat /tmp/summary.md)" > /dev/null || true

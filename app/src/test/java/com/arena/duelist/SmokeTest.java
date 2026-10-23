@@ -72,17 +72,26 @@ public class SmokeTest {
         }
     }
 
+    private int shotsWritten;
+
     private void shot(String name) {
         game.draw(canvas);
+        File dir = new File(System.getProperty("screenshot.dir", "build/screenshots"));
         try {
-            File dir = new File(System.getProperty("screenshot.dir", "build/screenshots"));
             if (!dir.exists() && !dir.mkdirs()) {
-                return;
+                throw new java.io.IOException("cannot create " + dir.getAbsolutePath());
             }
-            FileOutputStream out = new FileOutputStream(new File(dir, name + ".png"));
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+            File target = new File(dir, name + ".png");
+            FileOutputStream out = new FileOutputStream(target);
+            boolean ok = bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
             out.close();
-        } catch (Throwable ignored) {
+            if (!ok || target.length() == 0L) {
+                throw new java.io.IOException("compress produced no data: " + target);
+            }
+            shotsWritten++;
+        } catch (Exception e) {
+            throw new RuntimeException("screenshot '" + name + "' failed in "
+                    + dir.getAbsolutePath(), e);
         }
     }
 
@@ -118,6 +127,7 @@ public class SmokeTest {
         }
         assertEquals("quick match should reach the result screen", RESULT_SCREEN, game.debugScreen());
         shot("04-result");
+        assertTrue("screenshots should be written", shotsWritten >= 4);
     }
 
     @Test
@@ -143,7 +153,7 @@ public class SmokeTest {
             }
         }
         shot("07-survival-wave");
-        assertTrue(true);
+        assertTrue("screenshots should be written", shotsWritten >= 3);
     }
 
     @Test
@@ -171,5 +181,6 @@ public class SmokeTest {
         game.pointerUp(1, 140, 600);
         game.tick(1f / 60f);
         game.draw(canvas);
+        assertTrue("arena screenshots should be written", shotsWritten >= 2);
     }
 }
