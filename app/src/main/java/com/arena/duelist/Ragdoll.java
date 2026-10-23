@@ -215,6 +215,16 @@ public final class Ragdoll {
         }
     }
 
+    /**
+     * A knocked-down body that is then killed: keep the pose and physics but give
+     * it a fresh lifetime so the corpse stays on stage before fading.
+     */
+    public void reborn() {
+        age = 0f;
+        quietT = 0f;
+        fade = 1f;
+    }
+
     public boolean gone() {
         return fade <= 0f;
     }

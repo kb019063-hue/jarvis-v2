@@ -7,6 +7,10 @@ import android.graphics.RectF;
 public final class Fighter {
 
     public static final float HALF_W = 16f;
+    /** Poise breaks and the fighter ragdolls. Fists need 4 hits, a hammer 1. */
+    public static final float POISE_MAX = 46f;
+    private static final float POISE_REGEN = 14f;
+    private static final float POISE_HOLD = 1.1f;
     public static final float FEET = 30f;
     public static final float HEAD = 30f;
     public static final float HEIGHT = 96f;
@@ -47,8 +51,18 @@ public final class Fighter {
 
     public boolean dead;
     public float deadT;
-    /** Jointed body spawned on death; Game advances and draws it. */
+    /** Jointed body: the corpse after a KO, or the knocked-down body while alive. */
     public Ragdoll ragdoll;
+    /** Knocked down but alive: a ragdoll drives the body until it recovers. */
+    public boolean down;
+    public float downT;
+    /** Set for one frame when a hit should knock this fighter down. */
+    public boolean justDown;
+    /** Short grace period after standing up so the fighter is not re-launched. */
+    public float iframes;
+    /** Poise: accumulates with hits; at POISE_MAX the fighter goes down. */
+    public float poise;
+    public float poiseT;
     /** One-shot: set by kill(), consumed by Game to spawn the ragdoll. */
     public boolean justDied;
     /** Head lag on hits: a small spring that makes the neck look jointed. */
@@ -119,7 +133,7 @@ public final class Fighter {
     }
 
     public void damage(float amount, float kx, float ky, boolean ignoreShield) {
-        if (dead) {
+        if (dead || iframes > 0f) {
             return;
         }
         float dmg = amount;
@@ -140,10 +154,60 @@ public final class Fighter {
         wobY -= ky * 0.010f;
         hurtT = 0.22f;
         flashT = 0.16f;
+
+        // Poise: heavy weapons put you on the floor at once, light ones after a
+        // couple of clean hits. Already-down fighters just take the damage.
+        if (!down) {
+            poise += dmg * (1f + Math.abs(kx) / 500f);
+            poiseT = POISE_HOLD;
+            if (poise >= POISE_MAX) {
+                poise = 0f;
+                knockDown(kx, ky);
+            }
+        }
+
         if (health <= 0f) {
             health = 0f;
             kill(kx * 0.6f);
         }
+    }
+
+    /** Go limp: the live body is handed to the ragdoll, then recovers by itself. */
+    public void knockDown(float kx, float ky) {
+        if (dead || down) {
+            return;
+        }
+        down = true;
+        downT = 0f;
+        justDown = true;
+        attacking = false;
+        attackQueued = false;
+        jumpQueued = false;
+        shieldOn = false;
+        shieldHeld = false;
+        moveX = 0f;
+        vx = kx * 0.35f;
+        vy = Math.min(ky, -120f);
+    }
+
+    /** Stand back up at a spot chosen by the caller. */
+    public void recoverAt(float nx, float ny) {
+        down = false;
+        downT = 0f;
+        ragdoll = null;
+        x = nx;
+        y = ny;
+        vx = 0f;
+        vy = 0f;
+        onGround = true;
+        health = Math.max(1f, health);
+        hurtT = 0.12f;
+        iframes = 0.6f;
+        poise = 0f;
+        poiseT = 0f;
+        attacking = false;
+        attackQueued = false;
+        jumpQueued = false;
     }
 
     public void stun(float t) {
@@ -157,6 +221,7 @@ public final class Fighter {
         dead = true;
         health = 0f;
         attacking = false;
+        down = false; // no recovery once dead; the ragdoll is now a corpse
         vy = -280f;
         vx = kx + facing * -90f;
         justDied = true;
@@ -200,6 +265,33 @@ public final class Fighter {
         }
         if (hurtT > 0) {
             hurtT -= dt;
+        }
+        if (iframes > 0f) {
+            iframes -= dt;
+        }
+        if (!down && poise > 0f) {
+            if (poiseT > 0f) {
+                poiseT -= dt;
+            } else {
+                poise = Math.max(0f, poise - POISE_REGEN * dt);
+            }
+        }
+        if (spawnT > 0f) {
+            // fresh round: drop any leftover knock-down state
+            down = false;
+            ragdoll = null;
+            iframes = 0f;
+            poise = 0f;
+        }
+
+        if (down) {
+            // the ragdoll drives the body; Game steps it and calls recoverAt()
+            downT += dt;
+            attackQueued = false;
+            jumpQueued = false;
+            attacking = false;
+            shieldOn = false;
+            return;
         }
 
         if (dead) {
@@ -377,6 +469,12 @@ public final class Fighter {
         deadT = 0;
         ragdoll = null;
         justDied = false;
+        down = false;
+        downT = 0f;
+        justDown = false;
+        iframes = 0f;
+        poise = 0f;
+        poiseT = 0f;
         wobX = 0;
         wobY = 0;
         wobVx = 0;

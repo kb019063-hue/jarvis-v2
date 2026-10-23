@@ -973,8 +973,11 @@ public final class Game {
         for (int i = 0; i < arena.hazards.size(); i++) {
             Maps.Hazard hz = arena.hazards.get(i);
             RectF r = hz.r;
-            boolean inside = f.x + Fighter.HALF_W > r.left && f.x - Fighter.HALF_W < r.right
-                    && f.y + Fighter.FEET > r.top && f.y - Fighter.HEAD < r.bottom;
+            float halfW = f.down ? 30f : Fighter.HALF_W;
+            float top = f.down ? 16f : Fighter.HEAD;
+            float bot = f.down ? 16f : Fighter.FEET;
+            boolean inside = f.x + halfW > r.left && f.x - halfW < r.right
+                    && f.y + bot > r.top && f.y - top < r.bottom;
             if (!inside) {
                 continue;
             }
@@ -1140,9 +1143,24 @@ public final class Game {
     private void spawnRagdolls() {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
+            if (f.justDown && !f.dead) {
+                f.justDown = false;
+                f.ragdoll = new Ragdoll(f);
+                fx.dust(f.x, f.y + Fighter.FEET, 0x77FFFFFF, 7, 30f);
+                fx.ring(f.x, f.y + Fighter.FEET - 10f, 0xFFFFE38A, 24, 0.3f);
+                fx.floatText(f.x, f.y - 70f, "DOWN!", 0xFFFFC46B);
+                shake = Math.max(shake, 7f);
+                sfx(SoundFx.HIT);
+                host.vibrate(25);
+            }
             if (f.justDied) {
                 f.justDied = false;
-                f.ragdoll = new Ragdoll(f);
+                if (f.ragdoll != null) {
+                    // killed while already ragdolled: keep the pose, don't teleport
+                    f.ragdoll.reborn();
+                } else {
+                    f.ragdoll = new Ragdoll(f);
+                }
                 fx.dust(f.x, f.y + Fighter.FEET, 0x66FFFFFF, 6, 26f);
             }
         }
@@ -1151,22 +1169,72 @@ public final class Game {
     private void updateRagdolls(float dt) {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            if (f.ragdoll != null) {
-                f.ragdoll.update(dt, arena);
-                if (f.ragdoll.gone()) {
-                    f.ragdoll = null;
+            Ragdoll body = f.ragdoll;
+            if (body == null) {
+                continue;
+            }
+            body.update(dt, arena);
+
+            if (f.down) {
+                // the hips are the fighter's real position while it is prone, so
+                // hazards, the camera and projectiles all see the body
+                f.x = body.x[Ragdoll.HIPS];
+                f.y = body.y[Ragdoll.HIPS];
+                boolean settled = body.quiet && f.downT > 0.85f;
+                if (settled || f.downT > 1.9f || body.gone()) {
+                    recoverFromRagdoll(f);
                 }
+            } else if (body.gone()) {
+                f.ragdoll = null;
             }
         }
     }
 
+    /** Stands a knocked-down fighter back up on whatever surface it is lying on. */
+    private void recoverFromRagdoll(Fighter f) {
+        if (f.dead) {
+            return;
+        }
+        Ragdoll body = f.ragdoll;
+        float hx = body != null ? body.x[Ragdoll.HIPS] : f.x;
+        float hy = body != null ? body.y[Ragdoll.HIPS] : f.y;
+
+        if (hy > arena.bounds.bottom + 60f) {
+            f.ragdoll = null;
+            f.down = false;
+            f.kill(0); // fell out of the world while prone
+            return;
+        }
+
+        float bestTop = Float.NaN;
+        for (int i = 0; i < arena.platforms.size(); i++) {
+            RectF r = arena.platforms.get(i).r;
+            if (hx < r.left + Fighter.HALF_W || hx > r.right - Fighter.HALF_W) {
+                continue;
+            }
+            if (r.top < hy - 40f || r.top > hy + 90f) {
+                continue; // not the surface the body is lying on
+            }
+            if (Float.isNaN(bestTop) || r.top < bestTop) {
+                bestTop = r.top;
+            }
+        }
+        float nx = Math.max(arena.bounds.left + Fighter.HALF_W,
+                Math.min(arena.bounds.right - Fighter.HALF_W, hx));
+        float ny = Float.isNaN(bestTop) ? hy - 10f : bestTop - Fighter.FEET;
+
+        f.recoverAt(nx, ny);
+        fx.dust(nx, ny + Fighter.FEET, 0x88FFFFFF, 5, 22f);
+        sfx(SoundFx.JUMP);
+    }
+
     /** Camera focus: follows the corpse's hips once the fighter is a ragdoll. */
     private float focusX(Fighter f) {
-        return f.dead && f.ragdoll != null ? f.ragdoll.x[Ragdoll.HIPS] : f.x;
+        return f.ragdoll != null ? f.ragdoll.x[Ragdoll.HIPS] : f.x;
     }
 
     private float focusY(Fighter f) {
-        return f.dead && f.ragdoll != null ? f.ragdoll.y[Ragdoll.HIPS] : f.y;
+        return f.ragdoll != null ? f.ragdoll.y[Ragdoll.HIPS] : f.y;
     }
 
     private void updateCamera(float dt) {
@@ -1277,10 +1345,8 @@ public final class Game {
         }
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            if (f.dead) {
-                if (f.ragdoll != null) {
-                    f.ragdoll.draw(g);
-                }
+            if (f.ragdoll != null) {
+                f.ragdoll.draw(g);
                 continue;
             }
             g.alpha(40);
@@ -1974,6 +2040,14 @@ public final class Game {
         phase = PH_FIGHT;
         phaseT = 30f;
         countAnnounced = true;
+    }
+
+    boolean debugDown(int i) {
+        return fighters[i].down;
+    }
+
+    float debugPoise(int i) {
+        return fighters[i].poise;
     }
 
     int debugRagdollCount() {

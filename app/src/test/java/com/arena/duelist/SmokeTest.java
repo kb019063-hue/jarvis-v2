@@ -237,6 +237,78 @@ public class SmokeTest {
     }
 
     @Test
+    public void heavyHitRagdollsThenAutoRecovers() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+
+        // a hammer-class blow: 40 damage, 600 knockback
+        cpu.damage(40f, 600f, -120f, false);
+        assertTrue("a heavy hit should knock the fighter down", cpu.down);
+
+        step(8);
+        assertEquals("the live body should be driven by a ragdoll", 1,
+                game.debugRagdollCount());
+        shot("18-knockdown");
+
+        int framesToRecover = 0;
+        while (cpu.down && framesToRecover < 300) {
+            game.tick(1f / 60f);
+            game.draw(canvas);
+            framesToRecover++;
+        }
+        assertTrue("the fighter should have got back up", !cpu.down);
+        assertTrue("recovery should take under two seconds", framesToRecover < 120);
+        assertEquals("the ragdoll is released on recovery", 0, game.debugRagdollCount());
+        assertTrue("recovery must not kill the fighter", !cpu.dead && cpu.health > 0f);
+        assertTrue("poise resets after getting up", cpu.poise == 0f);
+        assertTrue("recovered fighters get brief invulnerability", cpu.iframes > 0f);
+
+        // and that grace period must actually absorb a follow-up hit
+        float healthAfter = cpu.health;
+        cpu.damage(20f, 300f, -90f, false);
+        assertEquals("i-frames should eat the follow-up hit", healthAfter, cpu.health, 0.001f);
+
+        step(40);
+        shot("19-recovered");
+    }
+
+    @Test
+    public void poiseBreaksAfterFourJabs() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        float perHit = 8f * (1f + 250f / 500f); // fists: 8 damage, 250 knockback
+        for (int i = 1; i <= 3; i++) {
+            cpu.damage(8f, 250f, -90f, false);
+            game.tick(1f / 60f);
+            assertTrue("jab " + i + " should not knock down yet", !cpu.down);
+            assertTrue("poise should build", Math.abs(cpu.poise - i * perHit) < 0.01f);
+        }
+        cpu.damage(8f, 250f, -90f, false);
+        assertTrue("the fourth jab breaks poise", cpu.down);
+    }
+
+    @Test
+    public void downedFighterCannotAct() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.damage(40f, 600f, -120f, false);
+        step(4);
+
+        float startX = cpu.x;
+        cpu.input(1f, 1f, 0f, true, true, true);
+        step(30);
+        assertTrue("a downed fighter must not walk", Math.abs(cpu.x - startX) < 60f);
+        assertTrue("a downed fighter must not attack", !cpu.attacking);
+        assertTrue("a downed fighter must not shield", !cpu.shieldOn);
+    }
+
+    @Test
     public void ragdollIsFiniteInEveryArena() {
         boot();
         for (int m = 0; m < Maps.ALL.length; m++) {

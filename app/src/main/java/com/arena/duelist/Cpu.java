@@ -52,10 +52,21 @@ public final class Cpu {
     }
 
     public void think(Fighter me, Fighter foe, Maps.Arena arena, float dt, int level) {
-        if (me.dead || foe.dead) {
+        if (me.dead || foe.dead || me.down) {
             move = 0;
             attack = false;
             shield = false;
+            return;
+        }
+        // punish a knocked-down opponent: close in and swing
+        if (foe.down) {
+            float gap = Math.abs(foe.x - me.x);
+            move = gap > 70f ? (foe.x > me.x ? 1f : -1f) : 0f;
+            attack = gap < 150f;
+            shield = false;
+            aimX = foe.x >= me.x ? 1f : -1f;
+            aimY = 0f;
+            jump = false;
             return;
         }
 
