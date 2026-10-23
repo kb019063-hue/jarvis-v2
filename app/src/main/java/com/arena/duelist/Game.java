@@ -136,10 +136,12 @@ public final class Game {
     private float viewW = 960f;
     private float viewH = 540f;
     private float camX, camY;
-    private static final float ZOOM = 1.55f;
+    private static final float ZOOM = 1.45f;
     /** Camera zoom, eased between ZOOM and ZOOM_MIN as the fighters separate. */
     private float zoom = ZOOM;
-    private static final float ZOOM_MIN = 1.02f;
+    private static final float ZOOM_MIN = 0.40f;
+    private boolean cameraReady;
+    private float zoomHold;
     private float shake;
     private float hitStop;
     private float time;
@@ -175,6 +177,8 @@ public final class Game {
         viewH = 540f;
         viewW = w / scale;
         layoutControls();
+        cameraReady = false;
+        updateCamera(0f);
     }
 
     private void layoutControls() {
@@ -586,7 +590,9 @@ public final class Game {
         paused = false;
         resultDelay = 0;
         hitStop = 0f;
-        if (isFootball()) updateCamera(0f);
+        cameraReady = false;
+        zoomHold = 0f;
+        updateCamera(0f);
         layoutControls();
         if (startNow) {
             screen = S_PLAY;
@@ -649,7 +655,6 @@ public final class Game {
                     f.update(dt, arena, isFootball() || profile.gravity,
                             !isFootball() && profile.energyShield, false);
                 }
-                updateCamera(dt);
                 break;
             case PH_FIGHT:
                 stepFight(dt);
@@ -823,7 +828,7 @@ public final class Game {
                     : (mode == M_BOSS ? Math.min(3, profile.difficulty + 1) : profile.difficulty);
             cpu.think(b, a, arena, dt, lvl);
             boolean attack = cpu.attack();
-            boolean special = attack && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
+            boolean special = attack && cpu.skillSafe(b, arena) && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
                     && useAbility(b, cpu.aimX(), cpu.aimY());
             b.input(cpu.move(), cpu.aimX(), cpu.aimY(), cpu.jump(),
                     attack && !special, cpu.shield());
@@ -1432,9 +1437,14 @@ public final class Game {
         shots.clear();
         pickups.clear();
         phase = PH_INTRO;
-        phaseT = 3.0f;
+        phaseT = 3.4f;
         lastCount = -1;
         countAnnounced = false;
+        cpu.reset();
+        hitStop = 0f;
+        cameraReady = false;
+        zoomHold = 0f;
+        updateCamera(0f);
     }
 
     private void onEnemyDown() {
@@ -1578,7 +1588,7 @@ public final class Game {
     private void updateRagdolls(float dt) {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            if (f.ragdolled() && f.body == null) {
+            if (f.down && f.body == null) {
                 f.ensureBody();
             }
             Ragdoll body = f.body;
@@ -1642,67 +1652,68 @@ public final class Game {
         sfx(SoundFx.JUMP);
     }
 
-    /** Camera focus: follows the corpse's hips once the fighter is a ragdoll. */
+    /** Track live positions, never a corpse falling below the arena. */
     private float focusX(Fighter f) {
-        return f.body != null ? f.body.x[Ragdoll.HIPS] : f.x;
+        float x = f.down && f.body != null ? f.body.x[Ragdoll.HIPS] : f.x;
+        return Math.max(arena.bounds.left, Math.min(arena.bounds.right, x));
     }
 
     private float focusY(Fighter f) {
-        return f.body != null ? f.body.y[Ragdoll.HIPS] : f.y;
+        float y = f.down && f.body != null ? f.body.y[Ragdoll.HIPS] : f.y;
+        float floor = arena.platforms.get(0).r.top;
+        return Math.max(floor - 520f, Math.min(floor + 25f, y));
     }
 
     private void updateCamera(float dt) {
         if (isFootball()) {
-            // Keep both goals and the ball visible, independent of fighter separation.
             zoom = Math.min(viewW / 1560f, (viewH - 180f) / 500f);
             camX = (Football.WIDTH - viewW / zoom) * 0.5f;
             camY = Football.CEILING - 95f / zoom;
+            cameraReady = true;
             return;
         }
-        float sepX = Math.abs(focusX(fighters[0]) - focusX(fighters[1]));
-        float sepY = Math.abs(focusY(fighters[0]) - focusY(fighters[1]));
-        float sep = Math.max(sepX, sepY * 1.5f);
-        float t = Math.max(0f, Math.min(1f, (sep - 260f) / 900f));
-        float targetZoom = ZOOM + (ZOOM_MIN - ZOOM) * t;
-        // zoom settles faster than the pan, otherwise a knockdown is already
-        // over before the camera has widened enough to show it
-        zoom += (targetZoom - zoom) * (1f - (float) Math.pow(0.00005f, dt));
-
-        float vw = viewW / zoom;
-        float vh = viewH / zoom;
-        float tx = (focusX(fighters[0]) + focusX(fighters[1])) * 0.5f;
-        float ty = (focusY(fighters[0]) + focusY(fighters[1])) * 0.5f;
-        // When someone is on the floor - knocked down or out - lean the camera
-        // toward that body: ragdolls fly a long way, and an even midpoint left
-        // the body off-screen entirely.
-        boolean aBody = fighters[0].dead || fighters[0].down;
-        boolean bBody = fighters[1].dead || fighters[1].down;
-        if (aBody != bBody) { // exactly one fighter is on the floor
-            int body = aBody ? 0 : 1;
-            int other = 1 - body;
-            tx = focusX(fighters[body]) * 0.78f + focusX(fighters[other]) * 0.22f;
-            ty = focusY(fighters[body]) * 0.72f + focusY(fighters[other]) * 0.28f;
+        if (arena.platforms.isEmpty()) return;
+        // Keep the last combat framing during a K.O./result. Corpses are free
+        // to fall/fade without dragging the camera out of the fighting space.
+        if (cameraReady && phase != PH_INTRO && phase != PH_FIGHT) return;
+        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 100f;
+        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 100f;
+        float minY = Math.min(focusY(fighters[0]), focusY(fighters[1])) - Fighter.HEAD - 35f;
+        float maxY = Math.max(focusY(fighters[0]), focusY(fighters[1])) + Fighter.FEET + 22f;
+        final float top = 105f, bottom = viewH - 130f;
+        float fit = Math.min((viewW - 96f) / (maxX - minX), (bottom - top) / (maxY - minY));
+        float targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM, fit));
+        if (cameraReady && dt > 0f) {
+            zoomHold = Math.max(0f, zoomHold - dt);
+            if (targetZoom < zoom - 0.07f) {
+                // Fit immediately: do not clip a fighter while slowly zooming out.
+                zoom = targetZoom;
+                zoomHold = 1.0f;
+            } else if (targetZoom > zoom + 0.12f && zoomHold <= 0f) {
+                zoom += (targetZoom - zoom) * (1f - (float) Math.exp(-2f * dt));
+            }
+        } else {
+            zoom = targetZoom;
         }
-        float targetX = tx - vw * 0.5f;
-        float targetY = ty - vh * 0.55f;
-
-        float minX = arena.bounds.left - 40f;
-        float maxX = arena.bounds.right - vw + 40f;
-        if (maxX < minX) {
-            maxX = minX = (arena.bounds.left + arena.bounds.right - vw) * 0.5f;
+        float targetX = (minX + maxX) * 0.5f - viewW / (2f * zoom);
+        float floor = arena.platforms.get(0).r.top;
+        float targetY = floor - (bottom - 20f) / zoom;
+        float low = maxY - bottom / zoom;
+        float high = minY - top / zoom;
+        targetY = Math.max(low, Math.min(high, targetY));
+        if (!cameraReady || dt <= 0f) {
+            camX = targetX;
+            camY = targetY;
+        } else {
+            float k = 1f - (float) Math.exp(-6f * dt);
+            camX += (targetX - camX) * k;
+            camY += (targetY - camY) * k;
+            // Soft follow inside a hard visibility envelope, clear of HUD/sticks.
+            camX = Math.max(maxX - (viewW - 48f) / zoom,
+                    Math.min(minX - 48f / zoom, camX));
+            camY = Math.max(low, Math.min(high, camY));
         }
-        targetX = Math.max(minX, Math.min(maxX, targetX));
-
-        float minY = arena.bounds.top - 120f;
-        float maxY = arena.bounds.bottom - vh + 70f;
-        if (maxY < minY) {
-            maxY = minY = (arena.bounds.top + arena.bounds.bottom - vh) * 0.5f;
-        }
-        targetY = Math.max(minY, Math.min(maxY, targetY));
-
-        float k = 1f - (float) Math.pow(0.0016f, dt);
-        camX += (targetX - camX) * k;
-        camY += (targetY - camY) * k;
+        cameraReady = true;
     }
 
     // ------------------------------------------------------------------ draw
@@ -2122,7 +2133,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.1", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2563,6 +2574,12 @@ public final class Game {
     boolean debugUseAbility(int i, float dx, float dy) {
         return useAbility(fighters[i], dx, dy);
     }
+
+    void debugSeed(long seed) { rnd.setSeed(seed); cpu.seed(seed); }
+
+    float[] debugCamera() { return new float[] { camX, camY, zoom }; }
+
+    void debugStepRagdolls(float dt) { updateRagdolls(dt); }
 
     Football debugFootball() { return football; }
 
