@@ -70,6 +70,25 @@ public final class Maps {
 
     public static final String[] NAMES = collectNames(ALL);
 
+    /** Nudges a spawn x onto the nearest platform so nobody starts over a pit. */
+    public static float safeSpawnX(Arena arena, float x, float spawnY) {
+        float bestX = x;
+        float bestDist = Float.MAX_VALUE;
+        for (int i = 0; i < arena.platforms.size(); i++) {
+            Platform pl = arena.platforms.get(i);
+            if (pl.r.top < spawnY - 20f) {
+                continue; // platform above the fighter's feet, can't land on it
+            }
+            float cx = Math.max(pl.r.left + 46f, Math.min(pl.r.right - 46f, x));
+            float dist = Math.abs(cx - x);
+            if (dist < bestDist && pl.r.width() > 92f) {
+                bestDist = dist;
+                bestX = cx;
+            }
+        }
+        return bestX;
+    }
+
     private static String[] collectNames(Arena[] arr) {
         String[] out = new String[arr.length];
         for (int i = 0; i < arr.length; i++) {
@@ -101,7 +120,7 @@ public final class Maps {
                 .haz(560, 760, 280, 120, HAZ_LAVA));
 
         out.add(new Arena("Lava Core", 0xFF200A0A, 0xFF7A2410, 0xFF33181A, 0xFFFF7A3C, 0xFF5A1E18,
-                1500, 840, 420, 1080, 540)
+                1500, 840, 260, 1240, 540)
                 .add(0, 660, 420, 200, 0)
                 .add(1080, 660, 420, 200, 0)
                 .add(520, 620, 460, 30, 2)
@@ -132,7 +151,7 @@ public final class Maps {
                 .add(600, 250, 200, 18, 1));
 
         out.add(new Arena("Orbital Deck", 0xFF05060E, 0xFF151A33, 0xFF1E2440, 0xFF7D8BFF, 0xFF2A3050,
-                1500, 840, 460, 1040, 520)
+                1500, 840, 250, 1250, 520)
                 .add(0, 660, 460, 200, 2)
                 .add(1040, 660, 460, 200, 2)
                 .add(520, 640, 460, 26, 2)
@@ -141,7 +160,7 @@ public final class Maps {
                 .haz(460, 760, 580, 120, HAZ_SPIKES));
 
         out.add(new Arena("Volcano Rim", 0xFF1A0A0A, 0xFFC24A1A, 0xFF3A1E16, 0xFFFFB04A, 0xFF6A2A18,
-                1500, 860, 470, 1030, 540)
+                1500, 860, 250, 1250, 540)
                 .add(0, 680, 480, 200, 0)
                 .add(1020, 680, 480, 200, 0)
                 .add(540, 600, 420, 28, 0)
@@ -157,7 +176,7 @@ public final class Maps {
                 .add(560, 320, 180, 22, 1));
 
         out.add(new Arena("Chaos Pit", 0xFF14061E, 0xFF3E1650, 0xFF2A1430, 0xFFE86BFF, 0xFF4A2058,
-                1500, 860, 450, 1050, 520)
+                1500, 860, 500, 1000, 520)
                 .add(0, 660, 380, 200, 3)
                 .add(1120, 660, 380, 200, 3)
                 .add(420, 620, 660, 26, 3)

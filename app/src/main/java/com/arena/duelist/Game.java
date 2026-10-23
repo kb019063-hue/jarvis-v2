@@ -473,8 +473,10 @@ public final class Game {
         mode = newMode;
         arenaIndex = Math.max(0, Math.min(Maps.ALL.length - 1, map));
         arena = Maps.ALL[arenaIndex];
-        fighters[0].reset(arena.spawnAx, arena.spawnAy);
-        fighters[1].reset(arena.spawnBx, arena.spawnBy);
+        float ax = Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET);
+        float bx = Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET);
+        fighters[0].reset(ax, arena.spawnAy);
+        fighters[1].reset(bx, arena.spawnBy);
         fighters[0].maxHealth = 100;
         fighters[0].health = 100;
         fighters[1].maxHealth = 100;
@@ -982,8 +984,10 @@ public final class Game {
             return;
         }
         roundNumber++;
-        fighters[0].reset(arena.spawnAx, arena.spawnAy);
-        fighters[1].reset(arena.spawnBx, arena.spawnBy);
+        fighters[0].reset(Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET),
+                arena.spawnAy);
+        fighters[1].reset(Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET),
+                arena.spawnBy);
         fighters[0].giveWeapon(profile.starter);
         fighters[1].giveWeapon(rndWeapon());
         shots.clear();
@@ -1013,7 +1017,8 @@ public final class Game {
         p.health = Math.min(p.maxHealth, p.health + 22f);
         p.shield = p.maxShield;
         float hpm = 70f + wave * 26f;
-        e.reset(arena.spawnBx, arena.spawnBy);
+        e.reset(Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET),
+                arena.spawnBy);
         e.maxHealth = hpm;
         e.health = hpm;
         e.color = 0xFFE9E9F2;
