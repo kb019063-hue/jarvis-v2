@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - 'arena/**'
+    paths-ignore:
+      - 'docs/screenshots/**'
   pull_request:
   workflow_dispatch:
 
@@ -61,26 +63,24 @@ jobs:
 
       - name: Publish screenshots
         if: success() && github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          set +e
-          for f in app/build/screenshots/*.png; do
-            [ -f "$f" ] || continue
-            name=$(basename "$f")
-            sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null)
-            mkdir -p docs/screenshots
-            cp "$f" "docs/screenshots/${name}"
-            if [ -n "$sha" ]; then
-              gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}" \
-                -f message="docs: update ${name}" -f content="$(base64 -w0 "$f")" \
-                -f branch="${GITHUB_REF_NAME}" -f sha="$sha" > /dev/null && echo "updated ${name}"
-            else
-              gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/docs/screenshots/${name}" \
-                -f message="docs: add ${name}" -f content="$(base64 -w0 "$f")" \
-                -f branch="${GITHUB_REF_NAME}" > /dev/null && echo "added ${name}"
-            fi
-          done
+          shopt -s nullglob
+          files=(app/build/screenshots/*.png)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no screenshots produced"
+            exit 0
+          fi
+          mkdir -p docs/screenshots
+          cp "${files[@]}" docs/screenshots/
+          git config user.name "duelist-bot"
+          git config user.email "duelist-bot@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then
+            echo "screenshots unchanged"
+            exit 0
+          fi
+          git commit -m "docs: refresh screenshots [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Summarize build
         if: success()
