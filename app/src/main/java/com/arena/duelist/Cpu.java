@@ -1,0 +1,185 @@
+package com.arena.duelist;
+
+import java.util.Random;
+
+/** Simple but lively opponent AI: spaces, punishes, dodges hazards, uses weapons. */
+public final class Cpu {
+
+    private final Random rnd = new Random();
+    private float thinkTimer;
+    private float move;
+    private boolean jump, attack, shield;
+    private float aimX = 1f, aimY = 0f;
+    private float mistakeTimer;
+
+    public void reset() {
+        thinkTimer = 0;
+        move = 0;
+        jump = false;
+        attack = false;
+        shield = false;
+        aimX = 1f;
+        aimY = 0f;
+        mistakeTimer = 0;
+    }
+
+    public float move() {
+        return move;
+    }
+
+    public float aimX() {
+        return aimX;
+    }
+
+    public float aimY() {
+        return aimY;
+    }
+
+    public boolean jump() {
+        boolean j = jump;
+        jump = false;
+        return j;
+    }
+
+    public boolean attack() {
+        boolean a = attack;
+        attack = false;
+        return a;
+    }
+
+    public boolean shield() {
+        return shield;
+    }
+
+    public void think(Fighter me, Fighter foe, Maps.Arena arena, float dt, int level) {
+        if (me.dead || foe.dead) {
+            move = 0;
+            attack = false;
+            shield = false;
+            return;
+        }
+
+        float skill = 0.25f + level * 0.22f;          // 0.25 .. 0.91
+        float reaction = 0.34f - level * 0.07f;      // seconds between re-decisions
+        float aggro = 0.35f + level * 0.15f;
+
+        float dx = foe.x - me.x;
+        float dy = foe.y - me.y;
+        float dist = Math.abs(dx);
+        float dir = dx >= 0 ? 1f : -1f;
+
+        aimX = dir;
+        aimY = dy < -60 ? -0.4f : (dy > 60 ? 0.5f : 0f);
+
+        thinkTimer -= dt;
+        mistakeTimer -= dt;
+
+        boolean inHazardDanger = false;
+        for (int i = 0; i < arena.hazards.size(); i++) {
+            Maps.Hazard h = arena.hazards.get(i);
+            if (h.r.contains(me.x, me.y + 40) || h.r.contains(me.x, me.y + 70)) {
+                inHazardDanger = true;
+            }
+        }
+
+        if (thinkTimer > 0f) {
+            return;
+        }
+        thinkTimer = reaction * (0.6f + rnd.nextFloat() * 0.9f);
+
+        boolean foeAttacking = foe.attacking && foe.hurtT <= 0f;
+        boolean foeRanged = Weapons.DEFS[foe.weapon].type != Weapons.MELEE;
+        boolean myRanged = Weapons.DEFS[me.weapon].type != Weapons.MELEE;
+        float reach = Weapons.DEFS[me.weapon].type == Weapons.MELEE
+                ? Weapons.DEFS[me.weapon].reach : 340f;
+
+        shield = false;
+        move = 0;
+        attack = false;
+
+        if (inHazardDanger) {
+            // scramble back toward the middle of the map
+            float mid = arena.bounds.centerX();
+            move = mid > me.x ? 1f : -1f;
+            jump = rnd.nextFloat() < 0.5f;
+            return;
+        }
+
+        if (me.health < 25 && rnd.nextFloat() < 0.5f * (1f - skill * 0.5f)) {
+            // stay away and recover
+            move = dist < 280 ? -dir : 0f;
+            shield = dist < 190 && level >= 1;
+            if (dist > 420 && myRanged && me.ammo != 0) {
+                attack = true;
+            }
+            return;
+        }
+
+        if (foeAttacking && dist < Weapons.DEFS[foe.weapon].reach + 70) {
+            float r = rnd.nextFloat();
+            if (r < skill * 0.7f) {
+                if (rnd.nextFloat() < 0.55f) {
+                    shield = true;
+                    move = -dir * 0.4f;
+                } else {
+                    jump = true;
+                    move = -dir;
+                }
+            } else {
+                move = -dir;
+            }
+            return;
+        }
+
+        if (myRanged) {
+            float ideal = 320f;
+            if (dist > ideal + 40) {
+                move = dir;
+            } else if (dist < ideal - 60) {
+                move = -dir;
+            } else {
+                move = 0;
+                if (rnd.nextFloat() < 0.85f && me.ammo != 0) {
+                    attack = true;
+                }
+                if (rnd.nextFloat() < 0.25f) {
+                    jump = true;
+                }
+            }
+            if (me.ammo == 0) {
+                move = dir;
+            }
+            return;
+        }
+
+        // melee
+        if (dist > reach * 0.85f) {
+            move = dir;
+            if (dy < -50 && rnd.nextFloat() < 0.55f) {
+                jump = true;
+            }
+            if (dist > 420 && rnd.nextFloat() < 0.15f) {
+                jump = true;
+            }
+        } else if (dist < reach * 0.45f) {
+            // too close, back up a bit sometimes
+            move = rnd.nextFloat() < 0.35f ? -dir : 0f;
+            if (rnd.nextFloat() < aggro) {
+                attack = true;
+            }
+            if (rnd.nextFloat() < 0.06f) {
+                shield = true;
+            }
+        } else {
+            if (rnd.nextFloat() < 0.82f) {
+                attack = true;
+            }
+            move = rnd.nextFloat() < 0.3f ? dir : 0f;
+        }
+
+        // occasional jump-in
+        if (rnd.nextFloat() < 0.03f + level * 0.01f) {
+            jump = true;
+        }
+    }
+}
