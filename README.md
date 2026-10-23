@@ -6,6 +6,18 @@ A native Android 2D physics stick-fighting game in the spirit of *Supreme Duelis
 
 <p align="center"><img src="assets/icon_512.png" width="180" alt="Stick Duelist icon"></p>
 
+## Screenshots
+
+These are rendered by the test suite on every push (Robolectric draws real frames to PNG), so they always match the current build.
+
+| | |
+|---|---|
+| ![Title](docs/screenshots/01-title.png) | ![Local duel](docs/screenshots/05-local-duel.png) |
+| ![Countdown](docs/screenshots/02-quick-fight.png) | ![K.O.](docs/screenshots/03-hit-and-hud.png) |
+| ![Arena picker](docs/screenshots/10-arena-picker.png) | ![Arsenal](docs/screenshots/11-arsenal.png) |
+| ![Lava Core](docs/screenshots/08-lava-core.png) | ![Orbital Deck](docs/screenshots/09-orbital-deck.png) |
+| ![Customize](docs/screenshots/14-customize.png) | ![Settings](docs/screenshots/13-settings.png) |
+
 ## What's in it
 
 **Fighters**
