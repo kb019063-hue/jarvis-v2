@@ -276,14 +276,6 @@ public final class Fighter {
                 poise = Math.max(0f, poise - POISE_REGEN * dt);
             }
         }
-        if (spawnT > 0f) {
-            // fresh round: drop any leftover knock-down state
-            down = false;
-            ragdoll = null;
-            iframes = 0f;
-            poise = 0f;
-        }
-
         if (down) {
             // the ragdoll drives the body; Game steps it and calls recoverAt()
             downT += dt;
