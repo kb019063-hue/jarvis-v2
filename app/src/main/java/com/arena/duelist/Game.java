@@ -104,6 +104,8 @@ public final class Game {
     private int resultCoins;
     private boolean playerWon;
     private float resultDelay;
+    private int confirmBuy = -1;
+    private boolean confirmReset;
 
     private float w = 960, h = 540;
     private float scale = 1f;
@@ -115,7 +117,6 @@ public final class Game {
     private float hitStop;
     private float time;
     private float spawnTimer;
-    private float introShake;
 
     // controls
     private final Stick stickA = new Stick();
@@ -127,9 +128,7 @@ public final class Game {
     private final TButton btnJumpB = new TButton();
     private final TButton btnShieldB = new TButton();
     private final RectF pauseRect = new RectF();
-    private int pressedAction;
-
-    private int framesDrawn;
+    private final Fighter previewFighter = new Fighter(0, "PREVIEW", 0, 0, false);
 
     public Game(Context ctx, Host host) {
         this.ctx = ctx;
@@ -188,15 +187,15 @@ public final class Game {
             }
             if (pauseRect.contains(x, y)) {
                 paused = true;
+                // drop last frame's menu hitboxes so an early tap cannot hit a
+                // stale button from the screen we came from
+                uiBtns.clear();
                 return;
             }
             if (mode == M_LOCAL) {
-                if (stickA.grab(id, x, y)) {
-                    return;
-                }
-                if (stickB.grab(id, x, y)) {
-                    return;
-                }
+                // Buttons get first refusal: the joystick's grab zone is large and
+                // used to swallow most of the ATK / DEF circles, which made 2P
+                // unplayable (only ~29% of ATK and ~18% of DEF were reachable).
                 if (btnAtkA.press(id, x, y)) {
                     fighters[0].attackQueued = true;
                     return;
@@ -221,6 +220,12 @@ public final class Game {
                 }
                 if (btnShieldB.press(id, x, y)) {
                     btnShieldB.held = true;
+                    return;
+                }
+                if (stickA.grab(id, x, y)) {
+                    return;
+                }
+                if (stickB.grab(id, x, y)) {
                     return;
                 }
             } else {
@@ -298,6 +303,16 @@ public final class Game {
 
     private void act(int action) {
         sfx(SoundFx.CLICK);
+        // "tap again to confirm" states: any other tap cancels them, which keeps
+        // a stale confirmation from spending coins or wiping progress later
+        boolean keepReset = confirmReset && action == A_RESET;
+        boolean keepBuy = confirmBuy >= 0 && action == A_WEAPON_BASE + confirmBuy;
+        if (!keepReset) {
+            confirmReset = false;
+        }
+        if (!keepBuy) {
+            confirmBuy = -1;
+        }
         if (action >= A_MAP_BASE && action < A_MAP_BASE + 100) {
             int idx = action - A_MAP_BASE;
             if (idx >= 0 && idx < Maps.ALL.length) {
@@ -307,16 +322,24 @@ public final class Game {
         }
         if (action >= A_WEAPON_BASE && action < A_WEAPON_BASE + 100) {
             int idx = action - A_WEAPON_BASE;
+            if (idx < 0 || idx >= Weapons.COUNT) {
+                return;
+            }
             if (profile.unlocked(idx)) {
                 profile.starter = idx;
                 profile.save();
                 host.announce(Weapons.name(idx));
-            } else if (profile.buy(idx)) {
+            } else if (profile.coins < Weapons.DEFS[idx].cost) {
+                host.announce("Not enough coins");
+            } else if (confirmBuy == idx) {
+                // second tap: actually spend the coins
+                profile.buy(idx);
                 profile.starter = idx;
                 host.announce("Unlocked " + Weapons.name(idx));
                 host.vibrate(20);
             } else {
-                host.announce("Not enough coins");
+                confirmBuy = idx;
+                host.announce("Tap again to buy for " + Weapons.DEFS[idx].cost);
             }
             return;
         }
@@ -381,6 +404,9 @@ public final class Game {
                 break;
             case A_MAPS_FROM_PAUSE:
                 paused = false;
+                // keep the mode we are actually playing; otherwise picking an
+                // arena after a pause silently restarted as Quick Fight
+                pendingMode = mode;
                 screen = S_MAPS;
                 break;
             case A_SOUND:
@@ -409,9 +435,17 @@ public final class Game {
                 host.announce(DIFF_NAMES[profile.difficulty]);
                 break;
             case A_RESET:
+                if (!confirmReset) {
+                    confirmReset = true;
+                    host.announce("Tap reset again to wipe progress");
+                    break;
+                }
+                confirmReset = false;
                 profile.coins = 250;
                 profile.wins = 0;
                 profile.losses = 0;
+                profile.streak = 0;
+                profile.bestStreak = 0;
                 profile.starter = 0;
                 for (int i = 0; i < Weapons.COUNT; i++) {
                     profile.weaponUnlocked[i] = Weapons.DEFS[i].cost == 0;
@@ -493,6 +527,12 @@ public final class Game {
         fighters[0].accent = 0xFF4D9BFF;
         fighters[0].giveWeapon(profile.starter);
         fighters[1].giveWeapon(rndWeapon());
+        if (newMode == M_SURVIVAL) {
+            // same formula spawnWave() uses, so wave 1 is not the hardest wave
+            float hpm = 70f + 18f;
+            fighters[1].maxHealth = hpm;
+            fighters[1].health = hpm;
+        }
         cpu.reset();
         shots.clear();
         pickups.clear();
@@ -503,7 +543,9 @@ public final class Game {
         wave = 1;
         spawnTimer = 2.5f;
         phase = PH_INTRO;
-        phaseT = 2.6f;
+        // 3.4s so the overlay really counts 3 - 2 - 1; with 2.6s the "3" was
+        // never visible and the announcer started at "Two"
+        phaseT = 3.4f;
         lastCount = -1;
         countAnnounced = false;
         paused = false;
@@ -580,7 +622,6 @@ public final class Game {
         if (phaseT <= 0.6f && !countAnnounced) {
             countAnnounced = true;
             phase = PH_FIGHT;
-            introShake = 6f;
             shake = 5f;
             if (profile.voice) {
                 host.announce("Fight!");
@@ -781,6 +822,7 @@ public final class Game {
             if (p.special == 3) {
                 if (!p.returning && p.timer > 0.45f) {
                     p.returning = true;
+                    p.hitThisPass = false; // fresh pass on the way back
                 }
                 if (p.returning) {
                     float dx = self.x - p.x;
@@ -816,7 +858,15 @@ public final class Game {
                 float dx = foe.x - p.x;
                 float dy = (foe.y - 6f) - p.y;
                 float rr = p.r + 24f;
-                if (dx * dx + dy * dy < rr * rr) {
+                // A boomerang survives its hit, so it is capped to one hit per
+                // pass and two per throw. Without this it re-hit every frame it
+                // overlapped - six hits for a single throw.
+                boolean canHit = p.special != 3 || (!p.hitThisPass && p.hitCount < 2);
+                if (canHit && dx * dx + dy * dy < rr * rr) {
+                    if (p.special == 3) {
+                        p.hitCount++;
+                        p.hitThisPass = true;
+                    }
                     if (p.special == 1) {
                         explode(p);
                     } else {
@@ -966,8 +1016,6 @@ public final class Game {
         } else {
             roundWinsB++;
         }
-        fighters[0].finalFlip = aDead;
-        fighters[1].finalFlip = bDead;
         shake = 10f;
         fx.ring((fighters[0].x + fighters[1].x) * 0.5f,
                 (fighters[0].y + fighters[1].y) * 0.5f - 10, 0xFFFFE38A, 60, 0.7f);
@@ -993,7 +1041,7 @@ public final class Game {
         shots.clear();
         pickups.clear();
         phase = PH_INTRO;
-        phaseT = 2.2f;
+        phaseT = 3.0f;
         lastCount = -1;
         countAnnounced = false;
     }
@@ -1014,9 +1062,13 @@ public final class Game {
     private void spawnWave() {
         Fighter p = fighters[0];
         Fighter e = fighters[1];
-        p.health = Math.min(p.maxHealth, p.health + 22f);
+        // Survival used to cap the player at 100 HP while enemy HP climbed 26
+        // per wave (+26% of the player's whole bar), so it became unwinnable by
+        // about wave 4. Now the player grows a little and the curve is gentler.
+        p.maxHealth = Math.min(140f, 100f + (wave - 1) * 6f);
+        p.health = Math.min(p.maxHealth, p.health + 30f);
         p.shield = p.maxShield;
-        float hpm = 70f + wave * 26f;
+        float hpm = 70f + wave * 18f;
         e.reset(Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET),
                 arena.spawnBy);
         e.maxHealth = hpm;
@@ -1039,10 +1091,13 @@ public final class Game {
             resultTitle = "VICTORY";
             resultCoins = mode == M_SURVIVAL ? 40 : 70;
             profile.wins++;
+            profile.streak++;
+            profile.bestStreak = Math.max(profile.bestStreak, profile.streak);
         } else {
             resultTitle = "DEFEAT";
             resultCoins = 15;
             profile.losses++;
+            profile.streak = 0;
         }
         if (mode == M_SURVIVAL) {
             resultSub = "Reached wave " + wave + "  ·  " + (wave - 1) + " takedowns";
@@ -1063,6 +1118,7 @@ public final class Game {
     private void finishMatch() {
         screen = S_RESULT;
         paused = false;
+        uiBtns.clear();
     }
 
     private void updateWorldFx(float dt) {
@@ -1104,7 +1160,6 @@ public final class Game {
     // ------------------------------------------------------------------ draw
 
     public void draw(Canvas canvas) {
-        framesDrawn++;
         Painter g = new Painter(canvas);
         canvas.drawColor(0xFF0B0F17);
 
@@ -1403,7 +1458,6 @@ public final class Game {
         Canvas c = g.c;
         c.save();
         c.scale(scale, scale);
-        introShake = 0;
         g.rect(0, 0, viewW, 78, 0xE60A0E16);
         g.rect(0, 78, viewW, 2, 0x22FFFFFF);
         float barW = Math.min(260f, viewW * 0.26f);
@@ -1538,8 +1592,7 @@ public final class Game {
     }
 
     private void btn(Painter g, float x, float y, float w, float h, String label, int action, int tint) {
-        boolean hot = framesDrawn > 0 && uiBtns.size() >= 0 && pressedAction == action;
-        g.rrect(x, y, w, h, 12, Painter.withAlpha(tint, hot ? 200 : 60));
+        g.rrect(x, y, w, h, 12, Painter.withAlpha(tint, 60));
         g.rrectStroke(x, y, w, h, 12, 2f, Painter.withAlpha(tint, 180));
         g.size(Math.min(22f, h * 0.42f));
         g.textShadowCenter(label, x + w / 2, y + h / 2 + 7, 0xFFFFFFFF, 1.5f);
@@ -1564,16 +1617,18 @@ public final class Game {
         g.size(14);
         g.text("Choose an arena", 42, 96, 0x99FFFFFF);
 
-        int cols = 3;
-        float cw = (viewW - 80 - (cols - 1) * 18) / cols;
-        float ch = 96;
+        // 4 columns: a 3-wide grid only fits 9 cards, which silently hid the
+        // 10th arena (Chaos Pit) on every screen size
+        int cols = 4;
+        float cw = (viewW - 80 - (cols - 1) * 14) / cols;
+        float ch = 88;
         float startX = 40;
         float startY = 118;
         for (int i = 0; i < Maps.ALL.length; i++) {
             int col = i % cols;
             int row = i / cols;
-            float x = startX + col * (cw + 18);
-            float y = startY + row * (ch + 16);
+            float x = startX + col * (cw + 14);
+            float y = startY + row * (ch + 14);
             if (y + ch > viewH - 10) {
                 break;
             }
@@ -1622,15 +1677,19 @@ public final class Game {
             Weapons.Def d = Weapons.DEFS[i];
             boolean owned = profile.unlocked(i);
             boolean equipped = profile.starter == i;
+            boolean confirming = !owned && confirmBuy == i;
             g.rrect(x, y, cw, ch, 12, equipped ? 0x44FFC46B : 0x44000000);
-            g.rrectStroke(x, y, cw, ch, 12, equipped ? 2.5f : 1.2f,
-                    equipped ? 0xFFFFC46B : 0x33FFFFFF);
+            g.rrectStroke(x, y, cw, ch, 12, equipped || confirming ? 2.5f : 1.2f,
+                    equipped ? 0xFFFFC46B : (confirming ? 0xFFFF6B8A : 0x33FFFFFF));
             g.circle(x + 26, y + 30, 15, Painter.withAlpha(d.color, owned ? 220 : 60));
             g.size(15);
             g.text(d.name, x + 48, y + 26, owned ? 0xFFFFFFFF : 0x77FFFFFF);
             g.size(10);
             g.text(d.blurb, x + 10, y + 56, 0x88FFFFFF);
-            if (!owned) {
+            if (confirming) {
+                g.size(13);
+                g.text("TAP AGAIN · " + d.cost, x + 10, y + 84, 0xFFFF6B8A);
+            } else if (!owned) {
                 g.size(13);
                 g.text("🔒 " + d.cost, x + 10, y + 84, 0xFFFFC46B);
             } else if (equipped) {
@@ -1681,8 +1740,8 @@ public final class Game {
                     profile.hairStyle == i ? 0xFFFFC46B : 0xFF8A93A8);
         }
 
-        // preview
-        Fighter p = new Fighter(0, "PREVIEW", 0, 0, false);
+        // preview (cached: this screen used to allocate a Fighter every frame)
+        Fighter p = previewFighter;
         p.color = profile.skinColor;
         p.hair = profile.hairStyle;
         p.weapon = profile.starter;
@@ -1724,10 +1783,14 @@ public final class Game {
 
         float y3 = y2 + 56;
         g.size(12);
-        g.text("Wipes coins, unlocks and records", x + 16, y3 + 28, 0x88FFFFFF);
-        btn(g, x + 250, y3 + 4, 190, 40, "RESET PROGRESS", A_RESET, 0xFFFF6B8A);
+        g.text(confirmReset ? "Tap again to wipe everything" : "Wipes coins, unlocks and records",
+                x + 16, y3 + 28, confirmReset ? 0xFFFF6B8A : 0x88FFFFFF);
+        btn(g, x + 250, y3 + 4, 190, 40, confirmReset ? "TAP AGAIN!" : "RESET PROGRESS",
+                A_RESET, 0xFFFF6B8A);
 
         g.size(11);
+        g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
+                + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
         g.text("Stick Duelist v0.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
@@ -1947,7 +2010,7 @@ public final class Game {
             }
             float ddx = px - baseX;
             float ddy = py - baseY;
-            if (ddx * ddx + ddy * ddy < (radius + 70) * (radius + 70)) {
+            if (ddx * ddx + ddy * ddy < (radius + 34) * (radius + 34)) {
                 pointer = id;
                 startX = px;
                 startY = py;

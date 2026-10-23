@@ -11,6 +11,7 @@ public final class Profile {
     public int coins;
     public int wins;
     public int losses;
+    public int streak;
     public int bestStreak;
     public int skinColor;
     public int hairStyle;
@@ -29,6 +30,7 @@ public final class Profile {
         wins = sp.getInt("wins", 0);
         losses = sp.getInt("losses", 0);
         bestStreak = sp.getInt("streak", 0);
+        streak = sp.getInt("curstreak", 0);
         skinColor = sp.getInt("skin", 0xFFF2F2F2);
         hairStyle = sp.getInt("hair", 0);
         starter = sp.getInt("starter", 0);
@@ -80,6 +82,7 @@ public final class Profile {
         e.putInt("wins", wins);
         e.putInt("losses", losses);
         e.putInt("streak", bestStreak);
+        e.putInt("curstreak", streak);
         e.putInt("skin", skinColor);
         e.putInt("hair", hairStyle);
         e.putInt("starter", starter);

@@ -49,8 +49,6 @@ public final class Fighter {
     public float deathRot;
     public float deathSpin;
     public float deadT;
-    public float deathVx;
-    public boolean finalFlip;
 
     public int color = 0xFFF2F2F2;
     public int accent = 0xFFFF4D6D;
@@ -235,8 +233,12 @@ public final class Fighter {
             }
         }
 
-        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0
-                && Weapons.DEFS[weapon].type == Weapons.MELEE;
+        // DEF blocks with any weapon. This used to be melee-only, so the shield
+        // silently did nothing while you were holding a gun, bow or wand.
+        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0;
+        // House rule from the original: with the energy shield switched off, DEF
+        // makes the fighter bend down (crouch) instead.
+        crouch = !shieldAllowed && shieldHeld && canAct && onGround;
 
         // Horizontal movement
         float target = canAct ? moveX : 0f;
@@ -304,7 +306,7 @@ public final class Fighter {
             }
         }
         if (onGround && !wasGround) {
-            spawnLandDust();
+            landed = true; // Game turns this into a dust puff
         }
 
         if (x < arena.bounds.left + HALF_W) {
@@ -317,11 +319,7 @@ public final class Fighter {
         }
     }
 
-    private void spawnLandDust() {
-        // handled by Game through a pending flag
-        landed = true;
-    }
-
+    /** Set for one frame when the fighter touches down; consumed by Game. */
     public boolean landed;
 
     private void collide(Maps.Arena arena, float dt) {
