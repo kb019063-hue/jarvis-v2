@@ -1,6 +1,7 @@
 package com.arena.duelist;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -34,6 +35,7 @@ public class SmokeTest {
     private Bitmap bmp;
     private Canvas canvas;
     private Game game;
+    private FakeHost host;
 
     private static final class FakeHost implements Game.Host {
         int announcements;
@@ -58,7 +60,8 @@ public class SmokeTest {
 
     private void boot() {
         Context ctx = RuntimeEnvironment.getApplication();
-        game = new Game(ctx, new FakeHost());
+        host = new FakeHost();
+        game = new Game(ctx, host);
         game.resize(SCREEN_W, SCREEN_H);
         bmp = Bitmap.createBitmap(SCREEN_W, SCREEN_H, Bitmap.Config.ARGB_8888);
         canvas = new Canvas(bmp);
@@ -101,7 +104,11 @@ public class SmokeTest {
         shot("01-title");
 
         game.debugStartMatch(0, 3);
-        // 1P layout at 1600x720: stick left, buttons right
+        // This is a match-flow test, not a balance test: do not let random CPU
+        // combat end a round before the two scripted round-winning K.O.s.
+        game.debugFighter(0).maxHealth = 10000f;
+        game.debugFighter(0).health = 10000f;
+        // 1P layout at 1600x720: one floating movement/weapon stick on the left
         game.pointerDown(1, 140, 600);
         game.pointerMove(1, 280, 600);
         game.pointerDown(2, 1290, 621);
@@ -115,7 +122,8 @@ public class SmokeTest {
             if (frame % 3 == 0) {
                 game.draw(canvas);
             }
-            if (frame == 200 || frame == 900) {
+            if (frame == 200 || (frame > 200 && game.debugPhase() == 1
+                    && game.debugRoundWinsA() == 1 && !game.debugFighter(1).dead)) {
                 game.debugFighter(1).kill(0);
             }
             if (frame == 260) {
@@ -187,6 +195,8 @@ public class SmokeTest {
         tap(458, 166);
         assertEquals("second tap spends the price", coinsBefore - 120, game.profile.coins);
         assertTrue("second tap unlocks the sword", game.profile.unlocked(1));
+        Profile reloaded = new Profile(RuntimeEnvironment.getApplication());
+        assertEquals("newly bought starter must survive an app restart", 1, reloaded.starter);
         shot("20-arsenal-bought");
 
         boot();
@@ -206,6 +216,21 @@ public class SmokeTest {
         boot();
         tap(826, 434);        // "?" how to play (was 786: six units outside the button)
         shot("15-how-to-play");
+    }
+
+    @Test
+    public void androidBackClearsStaleMenuHitboxes() {
+        boot();
+        tap(1020, 330); // Arsenal
+        int coins = game.profile.coins;
+        assertTrue("Back should leave the arsenal", game.backPressed());
+        assertEquals("Back should return to the title", 0, game.debugScreen());
+        // Before the next draw, this used to hit the invisible Sword card and
+        // arm a purchase while the player was already back on the title screen.
+        tap(458, 166);
+        assertEquals("stale arsenal hitboxes must not spend coins", coins, game.profile.coins);
+        assertFalse("stale arsenal hitboxes must not unlock weapons", game.profile.unlocked(1));
+        assertEquals("the stale tap must not navigate away from title", 0, game.debugScreen());
     }
 
     @Test
@@ -264,8 +289,9 @@ public class SmokeTest {
         boot();
         game.debugStartMatch(0, 0);
         game.debugStartFight();
-        step(40);
         Fighter cpu = game.debugFighter(1);
+        cpu.cpu = false; // isolate muscle recovery from platform-navigation input
+        step(40);
 
         // a light jab must visibly disturb the body...
         cpu.damage(8f, 250f, -90f, false);
@@ -395,6 +421,301 @@ public class SmokeTest {
             assertTrue("arena " + m + " corpse escaped the arena",
                     body.y[Ragdoll.HIPS] < Maps.ALL[m].bounds.bottom + 400f);
         }
+    }
+
+    @Test
+    public void ragdollTimingMatchesAcrossFrameRates() {
+        Maps.Arena arena = Maps.ALL[0];
+        Ragdoll at60 = new Ragdoll(300, 400, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        Ragdoll at30 = new Ragdoll(300, 400, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        for (int i = 0; i < 30; i++) {
+            at60.update(1f / 60f, arena);
+        }
+        for (int i = 0; i < 15; i++) {
+            at30.update(1f / 30f, arena);
+        }
+        for (int i = 0; i < Ragdoll.N; i++) {
+            assertEquals("joint " + i + " x drifted with render rate",
+                    at60.x[i], at30.x[i], 0.02f);
+            assertEquals("joint " + i + " y drifted with render rate",
+                    at60.y[i], at30.y[i], 0.02f);
+        }
+    }
+
+    @Test
+    public void cpuRetreatsFromLavaEvenBetweenDecisions() {
+        Cpu cpu = new Cpu();
+        Maps.Arena arena = new Maps.Arena("Test Pit", 0, 0, 0, 0, 0,
+                1000, 800, 200, 900, 610)
+                .add(0, 640, 400, 180, 0)
+                .add(800, 640, 200, 180, 0)
+                .haz(400, 760, 400, 120, Maps.HAZ_LAVA);
+        Fighter me = new Fighter(1, "CPU", 380f, 610f, true);
+        Fighter foe = new Fighter(0, "P1", 900f, 610f, false);
+        me.onGround = true;
+        foe.onGround = true;
+        // Prime a positive decision timer on a hazard-free map. Hazard avoidance
+        // must still run immediately on the next call, not wait for AI thinking.
+        cpu.think(me, foe, Maps.ALL[3], 1f / 60f, 3);
+        cpu.think(me, foe, arena, 0.0001f, 3);
+        assertTrue("with no usable route the CPU must retreat from lava", cpu.move() < 0f);
+        assertFalse("retreating must not retrigger the old panic-jump loop", cpu.jump());
+    }
+
+    @Test
+    public void fighterCanJumpThroughAndLandOnThinPlatform() {
+        Fighter f = new Fighter(1, "CPU", 1020f, 610f, true);
+        f.spawnT = 0f;
+        f.onGround = true;
+        f.jump();
+        for (int i = 0; i < 120; i++) {
+            f.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertTrue("fighter should land on the ledge above the first-map spawn", f.onGround);
+        assertEquals("Rooftop Dusk upper ledge must be physically reachable",
+                440f, f.y, 2f);
+    }
+
+    @Test
+    public void firstMapCpuOpeningDoesNotSuicideOrJumpLoop() {
+        boot();
+        game.profile.instantKO = true;
+        game.debugStartMatch(0, 0);
+        game.debugSuppressPickups();
+        Fighter cpu = game.debugFighter(1);
+        Fighter player = game.debugFighter(0);
+        cpu.giveWeapon(Weapons.FIST);
+        player.giveWeapon(Weapons.FIST);
+        // Run the real countdown rather than teleporting directly to a combat
+        // state: the reported failure happened as the opening fight started.
+        for (int i = 0; i < 300 && game.debugPhase() != 1; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("opening countdown should enter combat", 1, game.debugPhase());
+
+        int jumps = 0;
+        boolean wasGround = cpu.onGround;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i <= 720; i++) {
+            if (i % 60 == 0) {
+                trace.append("\nt=").append(i / 60)
+                        .append("s cpu=(").append((int) cpu.x).append(',').append((int) cpu.y)
+                        .append(") v=(").append((int) cpu.vx).append(',').append((int) cpu.vy)
+                        .append(") ground=").append(cpu.onGround)
+                        .append(" hp=").append((int) cpu.health)
+                        .append(" jumps=").append(jumps)
+                        .append(" phase=").append(game.debugPhase());
+            }
+            if (cpu.dead || player.dead) {
+                break;
+            }
+            game.tick(1f / 60f);
+            if (wasGround && !cpu.onGround && cpu.vy < -500f) {
+                jumps++;
+            }
+            wasGround = cpu.onGround;
+        }
+        assertFalse("CPU killed itself in the first-map opening:" + trace, cpu.dead);
+        assertTrue("CPU is stuck in a jump loop:" + trace, jumps <= 4);
+        assertTrue("CPU survived but never crossed the arena to engage:" + trace,
+                player.health < player.maxHealth || Math.abs(player.x - cpu.x) < 120f);
+    }
+
+    @Test
+    public void cpuDoesNotSuicideInAnyHazardArenaOpening() {
+        boot();
+        game.profile.instantKO = true;
+        for (int m = 0; m < Maps.ALL.length; m++) {
+            if (Maps.ALL[m].hazards.isEmpty()) {
+                continue;
+            }
+            game.debugStartMatch(0, m);
+            game.debugSuppressPickups();
+            Fighter cpu = game.debugFighter(1);
+            Fighter player = game.debugFighter(0);
+            cpu.giveWeapon(Weapons.FIST);
+            player.giveWeapon(Weapons.FIST);
+            player.maxHealth = 10000f;
+            player.health = 10000f;
+            for (int i = 0; i < 300 && game.debugPhase() != 1; i++) {
+                game.tick(1f / 60f);
+            }
+            for (int i = 0; i < 480 && !cpu.dead; i++) {
+                game.tick(1f / 60f);
+            }
+            assertFalse("CPU killed itself during the opening of " + Maps.ALL[m].name
+                    + " at (" + cpu.x + ',' + cpu.y + ')', cpu.dead);
+        }
+    }
+
+    @Test
+    public void projectileLifetimeUsesSecondsNotFrames() {
+        Projectile at60 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
+        Projectile at30 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
+        for (int i = 0; i < 120; i++) {
+            at60.update(1f / 60f);
+        }
+        for (int i = 0; i < 60; i++) {
+            at30.update(1f / 30f);
+        }
+        assertEquals("same two seconds must consume the same lifetime",
+                at60.life, at30.life, 0.001f);
+        assertFalse(at60.dead);
+        assertFalse(at30.dead);
+        for (int i = 0; i < 150; i++) {
+            at60.update(1f / 60f);
+        }
+        for (int i = 0; i < 75; i++) {
+            at30.update(1f / 30f);
+        }
+        assertTrue("4.5 seconds at 60 FPS should expire", at60.dead);
+        assertTrue("4.5 seconds at 30 FPS should expire", at30.dead);
+    }
+
+    @Test
+    public void doubleKoReplaysInsteadOfTiedDefeat() {
+        boot();
+        game.debugStartMatch(0, 3);
+        game.debugStartFight();
+        game.debugSetRoundWins(1, 1);
+        game.debugFighter(0).kill(0);
+        game.debugFighter(1).kill(0);
+        game.tick(1f / 60f);
+        assertEquals("double K.O. enters round end", 2, game.debugPhase());
+        assertEquals(1, game.debugRoundWinsA());
+        assertEquals(1, game.debugRoundWinsB());
+        step(150);
+        assertEquals("a drawn round must replay, not end 2-2", 0, game.debugPhase());
+        assertEquals("match is still running", 5, game.debugScreen());
+        assertEquals(1, game.debugRoundWinsA());
+        assertEquals(1, game.debugRoundWinsB());
+    }
+
+    @Test
+    public void survivalMutualKoDoesNotAwardPhantomWave() {
+        boot();
+        game.debugStartMatch(2, 3);
+        game.debugStartFight();
+        int coins = game.profile.coins;
+        game.debugFighter(0).kill(0);
+        game.debugFighter(1).kill(0);
+        game.tick(1f / 60f);
+        assertEquals("mutual K.O. ends survival immediately", 3, game.debugPhase());
+        assertEquals("wave must not advance after the player died", 1, game.debugWave());
+        assertEquals("only the defeat reward is granted", coins + 15, game.profile.coins);
+    }
+
+    @Test
+    public void countdownLocksInputAndClearsStaleMotion() {
+        boot();
+        game.debugStartMatch(1, 3);
+        Fighter p = game.debugFighter(0);
+        p.moveX = 1f;
+        p.attackQueued = true;
+        p.jumpQueued = true;
+        step(70); // spawn protection is over, but the countdown is not
+        float x = p.x;
+        assertEquals("stale movement is cleared", 0f, p.moveX, 0.001f);
+        game.pointerDown(1, 140, 600);
+        game.pointerMove(1, 280, 600);
+        game.pointerDown(2, 1290, 621); // old ATK location must do nothing too
+        step(10);
+        assertEquals("countdown cannot move a fighter", x, p.x, 0.001f);
+        assertFalse("countdown cannot start an attack", p.attacking);
+        assertFalse("countdown cannot queue a jump", p.jumpQueued);
+        assertEquals("countdown cannot pre-fire a shot", 0, game.debugShotCount());
+    }
+
+    @Test
+    public void voiceOffSilencesReadyAndUiAnnouncements() {
+        boot();
+        game.profile.voice = false;
+        host.announcements = 0;
+        tap(1020, 330); // Arsenal
+        tap(175, 166);  // equip Fists: normally announces the weapon name
+        assertEquals("voice-off must suppress UI announcements", 0, host.announcements);
+        game.debugStartMatch(0, 0);
+        assertEquals("voice-off must suppress Ready", 0, host.announcements);
+    }
+
+    @Test
+    public void touchReleaseTriggersWeaponSkill() {
+        boot();
+        game.debugStartMatch(1, 3);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        p.spawnT = 0f;
+        p.giveWeapon(1);
+        p.abilityT = 0f;
+        game.pointerDown(1, 140, 600);
+        game.pointerMove(1, 280, 600);
+        game.pointerUp(1, 280, 600);
+        assertTrue("release should start the sword dash", p.attacking);
+        assertTrue("release should start the skill cooldown", p.abilityT > 0f);
+    }
+
+    @Test
+    public void everyWeaponHasARealReleaseSkill() {
+        int[] expectedShots = {0, 0, 0, 0, 3, 0, 3, 5, 3, 2, 3, 1};
+        boot();
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            game.debugStartMatch(1, 3);
+            game.debugStartFight();
+            Fighter p = game.debugFighter(0);
+            Fighter foe = game.debugFighter(1);
+            p.spawnT = 0f;
+            p.giveWeapon(w);
+            p.abilityT = 0f;
+            p.x = 500f;
+            p.y = 590f;
+            foe.x = 560f;
+            foe.y = 590f;
+            float foeHealth = foe.health;
+            assertTrue("skill should fire for " + Weapons.name(w),
+                    game.debugUseAbility(0, 1f, 0f));
+            assertTrue("skill should start cooldown for " + Weapons.name(w), p.abilityT > 0f);
+            assertEquals("projectile skill count for " + Weapons.name(w),
+                    expectedShots[w], game.debugShotCount());
+            if (w == 3 || w == 5) {
+                assertTrue("shockwave should damage for " + Weapons.name(w), foe.health < foeHealth);
+            }
+            if (w == 0 || w == 1 || w == 2 || w == 11) {
+                assertTrue("dash skill should swing for " + Weapons.name(w), p.attacking);
+            }
+        }
+    }
+
+    @Test
+    public void meleeContactFollowsWeaponDirection() {
+        boot();
+        game.debugStartMatch(1, 3);
+        game.debugStartFight();
+        step(40);
+        Fighter p = game.debugFighter(0);
+        Fighter foe = game.debugFighter(1);
+        p.spawnT = 0f;
+        foe.spawnT = 0f;
+        p.giveWeapon(1);
+        game.pointerDown(1, 140, 600);
+        game.pointerMove(1, 140, 550); // up, but below the jump threshold
+
+        p.x = 500f;
+        p.y = 590f;
+        p.vx = 0f;
+        p.vy = 0f;
+        p.onGround = true;
+        p.body = null;
+        foe.x = 500f;
+        foe.y = 500f;
+        foe.vx = 0f;
+        foe.vy = 0f;
+        foe.onGround = false;
+        foe.body = null;
+        float health = foe.health;
+        for (int i = 0; i < 30 && foe.health == health; i++) {
+            game.tick(1f / 60f);
+        }
+        assertTrue("an upward sword should contact a fighter above", foe.health < health);
     }
 
     @Test

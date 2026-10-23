@@ -5,7 +5,8 @@ public final class Projectile {
 
     public float x, y, vx, vy, r;
     public float damage, knock;
-    public int color, owner, life, special;
+    public float life;
+    public int color, owner, special;
     public float angle, spin;
     public boolean dead;
     public boolean returning;
@@ -28,7 +29,7 @@ public final class Projectile {
         this.color = d.color;
         this.special = d.special;
         this.r = special == 1 ? 16f : 9f;
-        this.life = 240;
+        this.life = 4f; // seconds, not frames: behaviour must not change with FPS
         this.angle = (float) Math.atan2(vy, vx);
         this.spin = special == 3 ? 24f : 0f;
     }
@@ -41,8 +42,8 @@ public final class Projectile {
         if (special == 1) {
             vy += 900f * dt;
         }
-        life--;
-        if (life <= 0) {
+        life -= dt;
+        if (life <= 0f) {
             dead = true;
         }
     }

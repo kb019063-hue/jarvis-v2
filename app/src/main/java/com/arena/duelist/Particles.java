@@ -112,7 +112,7 @@ public final class Particles {
             p.y += p.vy * dt;
             p.rot += p.spin * dt;
             if (p.kind == DUST) {
-                p.vx *= 0.96f;
+                p.vx *= (float) Math.pow(0.96f, dt * 60f);
             }
         }
     }

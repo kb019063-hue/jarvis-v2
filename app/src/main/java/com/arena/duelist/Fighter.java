@@ -41,6 +41,10 @@ public final class Fighter {
     public float swingBoost;
 
     public float aimX = 1f, aimY = 0f;
+    /** World-space weapon direction, shared by drawing and hit detection. */
+    public float weaponAngle;
+    /** Remaining seconds before the release-triggered weapon skill is ready. */
+    public float abilityT;
     public float moveX;
     public boolean jumpQueued, attackQueued, shieldHeld, crouch;
     public boolean shieldOn;
@@ -130,17 +134,20 @@ public final class Fighter {
     }
 
     public float handX() {
-        return x + facing * 20f;
+        return body != null ? body.x[Ragdoll.HAND_R]
+                : x + (float) Math.cos(weaponAngle) * 20f;
     }
 
     public float handY() {
-        return y - 6f;
+        return body != null ? body.y[Ragdoll.HAND_R]
+                : y - 6f + (float) Math.sin(weaponAngle) * 20f;
     }
 
     public void giveWeapon(int w) {
         weapon = w;
         ammo = Weapons.DEFS[w].ammo;
         cooldown = 0.15f;
+        abilityT = Math.max(abilityT, 0.35f);
     }
 
     public float weaponReach() {
@@ -164,7 +171,10 @@ public final class Fighter {
 
     public void jump() {
         if (onGround || coyote > 0f) {
-            vy = -730f;
+            // High enough to reach the game's 170 px platform rises. The old
+            // -730 impulse topped out below them and made the intended routes
+            // unusable, especially on Rooftop Dusk.
+            vy = -850f;
             onGround = false;
             coyote = 0f;
         }
@@ -228,6 +238,7 @@ public final class Fighter {
         attacking = false;
         attackQueued = false;
         jumpQueued = false;
+        swingBoost = 0f;
         shieldOn = false;
         shieldHeld = false;
         moveX = 0f;
@@ -294,17 +305,22 @@ public final class Fighter {
                 && attackT < attackDur * 0.75f && attackT > attackDur * 0.25f;
     }
 
-    /** Current sword/hand tip position used for the melee hit arc. */
+    /** Current physical weapon tip, used by the melee contact test. */
     public float tipX() {
-        float reach = weaponReach();
-        return x + facing * reach;
+        return handX() + (float) Math.cos(weaponAngle) * weaponReach();
     }
 
     public float tipY() {
-        return y - 10f;
+        return handY() + (float) Math.sin(weaponAngle) * weaponReach();
     }
 
     public void update(float dt, Maps.Arena arena, boolean gravityOn, boolean shieldAllowed) {
+        update(dt, arena, gravityOn, shieldAllowed, true);
+    }
+
+    /** Updates the fighter, optionally freezing all player/CPU actions. */
+    public void update(float dt, Maps.Arena arena, boolean gravityOn, boolean shieldAllowed,
+                       boolean inputAllowed) {
         anim += dt;
         if (spawnT > 0) {
             spawnT -= dt;
@@ -314,6 +330,9 @@ public final class Fighter {
         }
         if (cooldown > 0) {
             cooldown -= dt;
+        }
+        if (abilityT > 0f) {
+            abilityT = Math.max(0f, abilityT - dt);
         }
         if (hurtT > 0) {
             hurtT -= dt;
@@ -353,7 +372,18 @@ public final class Fighter {
         wobX += wobVx * dt;
         wobY += wobVy * dt;
 
-        boolean canAct = hurtT <= 0f && spawnT <= 0f;
+        if (!inputAllowed) {
+            // Countdowns and round-end sequences simulate gravity and bodies, but
+            // never accept queued actions or carry movement over from combat.
+            attackQueued = false;
+            jumpQueued = false;
+            shieldHeld = false;
+            moveX = 0f;
+            attacking = false;
+            firedThisSwing = false;
+            crouch = false;
+        }
+        boolean canAct = inputAllowed && hurtT <= 0f && spawnT <= 0f;
         attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking;
         if (attackQueued) {
             attackQueued = false;
@@ -363,6 +393,7 @@ public final class Fighter {
             attackT -= dt;
             if (attackT <= 0) {
                 attacking = false;
+                swingBoost = 0f;
                 if (Weapons.DEFS[weapon].type == Weapons.MELEE) {
                     // fists never run dry, other melee weapons do
                     if (weapon != Weapons.FIST && ammo > 0) {
@@ -496,19 +527,27 @@ public final class Fighter {
             legSwing2 = 8f;
         }
 
+        float aimLength = (float) Math.sqrt(aimX * aimX + aimY * aimY);
+        float baseAngle = aimLength < 0.2f
+                ? (facing >= 0 ? 0f : (float) Math.PI)
+                : (float) Math.atan2(aimY, aimX);
+        weaponAngle = baseAngle;
+
         float handXr;
         float handYr;
         if (shieldOn) {
-            handXr = facing * 16f;
-            handYr = shoulderY + 4f;
+            handXr = (float) Math.cos(baseAngle) * 16f;
+            handYr = shoulderY + 4f + (float) Math.sin(baseAngle) * 12f;
         } else if (attacking) {
             float t = 1f - Math.max(0f, attackT) / attackDur;
-            float swing = (float) Math.sin(t * Math.PI) * (float) Math.PI * 0.9f;
-            handXr = facing * (armLen * (float) Math.cos(swing * 0.9f));
-            handYr = shoulderY + armLen * (float) Math.sin(swing * 0.9f) * 0.9f;
+            // The arm and weapon share this angle with the combat collision
+            // test: the visible blade is finally the thing that can hit.
+            weaponAngle = baseAngle + (t - 0.5f) * 2.6f;
+            handXr = armLen * (float) Math.cos(weaponAngle);
+            handYr = shoulderY + armLen * (float) Math.sin(weaponAngle);
         } else {
-            handXr = facing * 10f;
-            handYr = shoulderY + 20f;
+            handXr = armLen * 0.72f * (float) Math.cos(baseAngle);
+            handYr = shoulderY + 8f + armLen * 0.72f * (float) Math.sin(baseAngle);
         }
 
         float nkX = wobX;
@@ -559,6 +598,9 @@ public final class Fighter {
         for (int i = 0; i < arena.platforms.size(); i++) {
             RectF r = arena.platforms.get(i).r;
             boolean overlapX = right > r.left + 2 && left < r.right - 2;
+            // Thin ledges are one-way platforms: land from above, but allow a
+            // fighter to jump up through them. Thick ground remains solid.
+            boolean oneWay = r.height() <= 32f;
 
             if (overlapX && vy >= 0 && prevBottom <= r.top + 8 && bottom >= r.top) {
                 y = r.top - FEET;
@@ -569,16 +611,16 @@ public final class Fighter {
                 top = y - HEAD;
                 continue;
             }
-            if (overlapX && vy < 0 && prevTop >= r.bottom - 8 && top <= r.bottom) {
+            if (!oneWay && overlapX && vy < 0 && prevTop >= r.bottom - 8 && top <= r.bottom) {
                 y = r.bottom + HEAD;
                 vy = 40;
                 top = y - HEAD;
                 bottom = y + FEET;
                 continue;
             }
-            // side walls
+            // side walls (one-way ledges deliberately have none)
             boolean overlapY = bottom > r.top + 6 && top < r.bottom - 6;
-            if (overlapY) {
+            if (!oneWay && overlapY) {
                 if (x < r.centerX() && right > r.left && x > r.left) {
                     x = r.left - HALF_W;
                     vx = Math.min(0, vx) - 30;
@@ -615,6 +657,8 @@ public final class Fighter {
         attacking = false;
         attackT = 0;
         cooldown = 0;
+        abilityT = 0f;
+        weaponAngle = facing >= 0 ? 0f : (float) Math.PI;
         hurtT = 0;
         spawnT = 0.9f;
         flashT = 0;
@@ -625,6 +669,16 @@ public final class Fighter {
         shieldOn = false;
         hitThisSwing = false;
         firedThisSwing = false;
+        moveX = 0f;
+        aimX = facing >= 0 ? 1f : -1f;
+        aimY = 0f;
+        jumpQueued = false;
+        attackQueued = false;
+        shieldHeld = false;
+        landed = false;
+        coyote = 0f;
+        walkPhase = 0f;
+        swingBoost = 0f;
         prevBottom = y + FEET;
         prevTop = y - HEAD;
     }
@@ -880,16 +934,10 @@ public final class Fighter {
             return;
         }
         Weapons.Def d = Weapons.DEFS[w];
-        int c = d.color;
+        int c = abilityT <= 0f ? d.color : Painter.mix(d.color, 0xFF4A4A55, 0.55f);
         g.c.save();
         g.c.translate(hx, hy);
-        float rot = 0f;
-        if (attacking) {
-            float t = 1f - Math.max(0f, attackT) / attackDur;
-            rot = (t - 0.5f) * 110f * facing;
-        } else {
-            rot = 25f * facing;
-        }
+        float rot = (float) Math.toDegrees(weaponAngle);
         g.c.rotate(rot);
         switch (w) {
             case 1:

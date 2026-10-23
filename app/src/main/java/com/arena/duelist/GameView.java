@@ -13,6 +13,8 @@ import android.view.SurfaceView;
 public final class GameView extends SurfaceView implements SurfaceHolder.Callback {
 
     private static final long FRAME_MS = 16;
+    private static final float FIXED_DT = 1f / 60f;
+    private static final int MAX_STEPS = 5;
 
     private GameThread thread;
     private final Game game;
@@ -129,15 +131,22 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
         @Override
         public void run() {
             long last = System.nanoTime();
+            float accumulator = 0f;
             while (alive && running) {
                 long now = System.nanoTime();
-                float dt = (now - last) / 1_000_000_000f;
+                float elapsed = (now - last) / 1_000_000_000f;
                 last = now;
-                if (dt > 0.05f) {
-                    dt = 0.05f;
+                accumulator += Math.min(elapsed, 0.10f);
+                int steps = 0;
+                while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+                    game.tick(FIXED_DT);
+                    accumulator -= FIXED_DT;
+                    steps++;
                 }
-
-                game.tick(dt);
+                if (steps == MAX_STEPS) {
+                    // Do not retain a spiral-of-death backlog after a long hitch.
+                    accumulator = 0f;
+                }
 
                 Canvas c = null;
                 try {

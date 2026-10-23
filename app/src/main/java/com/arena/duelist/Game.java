@@ -95,6 +95,7 @@ public final class Game {
     private int roundNumber = 1;
     private int roundWinsA;
     private int roundWinsB;
+    private boolean roundDraw;
     private int wave = 1;
     private boolean paused;
     private boolean countAnnounced;
@@ -124,12 +125,6 @@ public final class Game {
     // controls
     private final Stick stickA = new Stick();
     private final Stick stickB = new Stick();
-    private final TButton btnAtkA = new TButton();
-    private final TButton btnJumpA = new TButton();
-    private final TButton btnShieldA = new TButton();
-    private final TButton btnAtkB = new TButton();
-    private final TButton btnJumpB = new TButton();
-    private final TButton btnShieldB = new TButton();
     private final RectF pauseRect = new RectF();
     private final Fighter previewFighter = new Fighter(0, "PREVIEW", 0, 0, false);
 
@@ -166,13 +161,7 @@ public final class Game {
         stickA.setBase(leftX, stickY, 74f);
         stickB.setBase(rightX, stickY, 74f);
 
-        btnAtkA.set(leftX + 122f, viewH - 64f, 48f, 0);
-        btnJumpA.set(leftX + 142f, viewH - 168f, 35f, 1);
-        btnShieldA.set(leftX + 58f, viewH - 206f, 29f, 2);
 
-        btnAtkB.set(rightX - 122f, viewH - 64f, 48f, 0);
-        btnJumpB.set(rightX - 142f, viewH - 168f, 35f, 1);
-        btnShieldB.set(rightX - 58f, viewH - 206f, 29f, 2);
 
         pauseRect.set(viewW - 60f, 88f, viewW - 20f, 128f);
     }
@@ -193,65 +182,27 @@ public final class Game {
                 // drop last frame's menu hitboxes so an early tap cannot hit a
                 // stale button from the screen we came from
                 uiBtns.clear();
+                releaseControls();
+                return;
+            }
+            // Countdown, K.O. and result transitions must not accept attacks or
+            // jumps. Physics continues, but combat input only belongs to FIGHT.
+            if (phase != PH_FIGHT) {
                 return;
             }
             if (mode == M_LOCAL) {
-                // Buttons get first refusal: the joystick's grab zone is large and
-                // used to swallow most of the ATK / DEF circles, which made 2P
-                // unplayable (only ~29% of ATK and ~18% of DEF were reachable).
-                if (btnAtkA.press(id, x, y)) {
-                    fighters[0].attackQueued = true;
-                    return;
-                }
-                if (btnJumpA.press(id, x, y)) {
-                    fighters[0].jumpQueued = true;
-                    sfx(SoundFx.JUMP);
-                    return;
-                }
-                if (btnShieldA.press(id, x, y)) {
-                    btnShieldA.held = true;
-                    return;
-                }
-                if (btnAtkB.press(id, x, y)) {
-                    fighters[1].attackQueued = true;
-                    return;
-                }
-                if (btnJumpB.press(id, x, y)) {
-                    fighters[1].jumpQueued = true;
-                    sfx(SoundFx.JUMP);
-                    return;
-                }
-                if (btnShieldB.press(id, x, y)) {
-                    btnShieldB.held = true;
-                    return;
-                }
+                // One stick per player: hold to move/aim/attack, release for
+                // the equipped weapon's skill. No separate button clusters.
                 if (stickA.grab(id, x, y)) {
                     return;
                 }
                 if (stickB.grab(id, x, y)) {
                     return;
                 }
-            } else {
-                // single player: left stick + right button cluster
-                if (x < viewW * 0.45f) {
-                    if (stickA.grabAnywhere(id, x, y)) {
-                        return;
-                    }
-                }
-                if (x > viewW * 0.45f) {
-                    if (btnAtkB.press(id, x, y)) {
-                        fighters[0].attackQueued = true;
-                        return;
-                    }
-                    if (btnJumpB.press(id, x, y)) {
-                        fighters[0].jumpQueued = true;
-                        sfx(SoundFx.JUMP);
-                        return;
-                    }
-                    if (btnShieldB.press(id, x, y)) {
-                        btnShieldB.held = true;
-                        return;
-                    }
+            } else if (x < viewW * 0.50f) {
+                // The single-player stick floats to the thumb on the left half.
+                if (stickA.grabAnywhere(id, x, y)) {
+                    return;
                 }
             }
             return;
@@ -272,26 +223,16 @@ public final class Game {
     }
 
     public void pointerUp(int id, float sx, float sy) {
+        if (screen == S_PLAY && !paused && phase == PH_FIGHT) {
+            if (stickA.pointer == id) {
+                useAbility(fighters[0], stickA.dx, stickA.dy);
+            }
+            if (mode == M_LOCAL && stickB.pointer == id) {
+                useAbility(fighters[1], stickB.dx, stickB.dy);
+            }
+        }
         stickA.release(id);
         stickB.release(id);
-        if (btnAtkA.release(id)) {
-            btnAtkA.held = false;
-        }
-        if (btnJumpA.release(id)) {
-            btnJumpA.held = false;
-        }
-        if (btnShieldA.release(id)) {
-            btnShieldA.held = false;
-        }
-        if (btnAtkB.release(id)) {
-            btnAtkB.held = false;
-        }
-        if (btnJumpB.release(id)) {
-            btnJumpB.held = false;
-        }
-        if (btnShieldB.release(id)) {
-            btnShieldB.held = false;
-        }
     }
 
     private void handleMenuTap(float x, float y) {
@@ -306,6 +247,8 @@ public final class Game {
 
     private void act(int action) {
         sfx(SoundFx.CLICK);
+        // No screen transition may leave active hitboxes from the old screen.
+        uiBtns.clear();
         // "tap again to confirm" states: any other tap cancels them, which keeps
         // a stale confirmation from spending coins or wiping progress later
         boolean keepReset = confirmReset && action == A_RESET;
@@ -331,18 +274,19 @@ public final class Game {
             if (profile.unlocked(idx)) {
                 profile.starter = idx;
                 profile.save();
-                host.announce(Weapons.name(idx));
+                announce(Weapons.name(idx));
             } else if (profile.coins < Weapons.DEFS[idx].cost) {
-                host.announce("Not enough coins");
+                announce("Not enough coins");
             } else if (confirmBuy == idx) {
                 // second tap: actually spend the coins
                 profile.buy(idx);
                 profile.starter = idx;
-                host.announce("Unlocked " + Weapons.name(idx));
+                profile.save(); // buy() saved before starter was assigned
+                announce("Unlocked " + Weapons.name(idx));
                 host.vibrate(20);
             } else {
                 confirmBuy = idx;
-                host.announce("Tap again to buy for " + Weapons.DEFS[idx].cost);
+                announce("Tap again to buy for " + Weapons.DEFS[idx].cost);
             }
             return;
         }
@@ -435,12 +379,12 @@ public final class Game {
             case A_DIFF:
                 profile.difficulty = (profile.difficulty + 1) % 4;
                 profile.save();
-                host.announce(DIFF_NAMES[profile.difficulty]);
+                announce(DIFF_NAMES[profile.difficulty]);
                 break;
             case A_RESET:
                 if (!confirmReset) {
                     confirmReset = true;
-                    host.announce("Tap reset again to wipe progress");
+                    announce("Tap reset again to wipe progress");
                     break;
                 }
                 confirmReset = false;
@@ -468,10 +412,16 @@ public final class Game {
             } else {
                 paused = true;
             }
+            uiBtns.clear();
+            releaseControls();
             return true;
         }
         if (screen != S_TITLE) {
-            screen = (screen == S_RESULT) ? S_TITLE : S_TITLE;
+            screen = S_TITLE;
+            // Back is a screen transition too: do not leave the old menu's
+            // buttons tappable until the next draw rebuilds the title hitboxes.
+            uiBtns.clear();
+            releaseControls();
             return true;
         }
         return false;
@@ -480,10 +430,11 @@ public final class Game {
     // ------------------------------------------------------------------- loop
 
     public void tick(float dt) {
-        time += dt;
-        if (dt > 0.05f) {
-            dt = 0.05f;
+        if (dt <= 0f) {
+            return;
         }
+        dt = Math.min(dt, 0.05f);
+        time += dt;
         fx.update(dt);
         if (shake > 0) {
             shake = Math.max(0, shake - dt * 26f);
@@ -507,6 +458,7 @@ public final class Game {
     }
 
     private void resetMatch(int newMode, int map, boolean startNow) {
+        releaseControls();
         mode = newMode;
         arenaIndex = Math.max(0, Math.min(Maps.ALL.length - 1, map));
         arena = Maps.ALL[arenaIndex];
@@ -542,6 +494,7 @@ public final class Game {
         fx.clear();
         roundWinsA = 0;
         roundWinsB = 0;
+        roundDraw = false;
         roundNumber = 1;
         wave = 1;
         spawnTimer = 2.5f;
@@ -556,7 +509,7 @@ public final class Game {
         layoutControls();
         if (startNow) {
             screen = S_PLAY;
-            host.announce("Ready");
+            announce("Ready");
         }
     }
 
@@ -584,8 +537,7 @@ public final class Game {
                 stepIntro();
                 for (int i = 0; i < 2; i++) {
                     Fighter f = fighters[i];
-                    f.update(dt, arena, profile.gravity, profile.energyShield);
-                    fireIfNeeded(f);
+                    f.update(dt, arena, profile.gravity, profile.energyShield, false);
                 }
                 updateCamera(dt);
                 break;
@@ -621,7 +573,7 @@ public final class Game {
         if (count > 0 && count != lastCount) {
             lastCount = count;
             if (profile.voice) {
-                host.announce(count == 3 ? "Three" : count == 2 ? "Two" : "One");
+                announce(count == 3 ? "Three" : count == 2 ? "Two" : "One");
             }
         }
         if (phaseT <= 0.6f && !countAnnounced) {
@@ -629,7 +581,7 @@ public final class Game {
             phase = PH_FIGHT;
             shake = 5f;
             if (profile.voice) {
-                host.announce("Fight!");
+                announce("Fight!");
             }
             host.vibrate(30);
         }
@@ -681,10 +633,12 @@ public final class Game {
         checkBounds(b);
 
         if (mode == M_SURVIVAL) {
-            if (b.dead && phase == PH_FIGHT) {
-                onEnemyDown();
-            } else if (a.dead && phase == PH_FIGHT) {
+            // A mutual KO is still a player death: never award a phantom wave,
+            // spawn another enemy, and only then show the defeat screen.
+            if (a.dead && phase == PH_FIGHT) {
                 endMatch(false);
+            } else if (b.dead && phase == PH_FIGHT) {
+                onEnemyDown();
             }
         } else {
             if ((a.dead || b.dead) && phase == PH_FIGHT) {
@@ -695,33 +649,43 @@ public final class Game {
 
     private void readControls(float dt) {
         Fighter a = fighters[0];
+        applyStick(a, stickA);
         if (mode == M_LOCAL) {
-            a.input(stickA.dx, stickA.dx, stickA.dy, btnJumpA.held, false, btnShieldA.held);
-            if (btnAtkA.held) {
-                a.attackQueued = true;
-            }
-            Fighter b = fighters[1];
-            b.input(stickB.dx, stickB.dx, stickB.dy, btnJumpB.held, false, btnShieldB.held);
-            if (btnAtkB.held) {
-                b.attackQueued = true;
-            }
-        } else {
-            float jx = stickA.dx;
-            float jy = stickA.dy;
-            float ax = Math.abs(jx) < 0.12f ? a.facing : jx;
-            boolean jump = btnJumpA.held || btnJumpB.held;
-            boolean shield = btnShieldA.held || btnShieldB.held;
-            a.input(jx, ax, jy, jump, false, shield);
-            if (btnAtkB.held) {
-                a.attackQueued = true;
-            }
-        }
-        if (fighters[1].cpu) {
+            applyStick(fighters[1], stickB);
+        } else if (fighters[1].cpu) {
             Fighter b = fighters[1];
             int lvl = mode == M_SURVIVAL ? Math.min(3, 1 + wave / 3) : profile.difficulty;
             cpu.think(b, a, arena, dt, lvl);
-            b.input(cpu.move(), cpu.aimX(), cpu.aimY(), cpu.jump(), cpu.attack(), cpu.shield());
+            boolean attack = cpu.attack();
+            boolean special = attack && b.abilityT <= 0f && rnd.nextFloat() < 0.40f
+                    && useAbility(b, cpu.aimX(), cpu.aimY());
+            b.input(cpu.move(), cpu.aimX(), cpu.aimY(), cpu.jump(),
+                    attack && !special, cpu.shield());
         }
+    }
+
+    /** Supreme-Duelist-style one-stick input for one human fighter. */
+    private void applyStick(Fighter f, Stick s) {
+        float jx = s.dx;
+        float jy = s.dy;
+        float mag = (float) Math.sqrt(jx * jx + jy * jy);
+        float ax = mag > 0.12f ? jx / mag : f.facing;
+        float ay = mag > 0.12f ? jy / mag : 0f;
+        float mx = Math.abs(jx) < 0.12f ? 0f : jx;
+
+        boolean jump = false;
+        if (jy < -0.58f && s.jumpReady) {
+            jump = true;
+            s.jumpReady = false;
+        }
+        if (jy > -0.35f) {
+            s.jumpReady = true;
+        }
+        boolean shield = jy > 0.58f;
+        // Directional movement is also the basic weapon action. Releasing the
+        // same stick fires the separate charged skill in pointerUp().
+        boolean attack = mag > 0.32f && !shield;
+        f.input(mx, ax, ay, jump, attack, shield);
     }
 
     /** Spawn a projectile at the start of a ranged/throw swing. */
@@ -734,27 +698,7 @@ public final class Game {
             return;
         }
         f.firedThisSwing = true;
-        float dirX = f.aimX;
-        float dirY = f.aimY;
-        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
-        if (len < 0.2f) {
-            dirX = f.facing;
-            dirY = 0;
-            len = 1f;
-        }
-        dirX /= len;
-        dirY /= len;
-        float speed = d.speed;
-        if (speed <= 0) {
-            speed = 900f;
-        }
-        float ox = f.x + dirX * 30f;
-        float oy = f.y - 8f + dirY * 22f;
-        Projectile p = new Projectile(f.weapon, f.id == 0 ? 0 : 1, ox, oy,
-                dirX * speed, dirY * speed);
-        p.damage = d.damage;
-        shots.add(p);
-        fx.sparks(ox, oy, d.color, 8, 150f);
+        spawnShot(f, f.weapon, f.aimX, f.aimY, 1f, 1f);
         sfx(SoundFx.THROW);
         host.vibrate(8);
 
@@ -768,41 +712,230 @@ public final class Game {
         }
     }
 
+    /** Creates one visible projectile without consuming basic-attack ammo. */
+    private void spawnShot(Fighter f, int weapon, float dirX, float dirY,
+                           float damageScale, float speedScale) {
+        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
+        if (len < 0.2f) {
+            dirX = f.facing;
+            dirY = 0f;
+            len = 1f;
+        }
+        dirX /= len;
+        dirY /= len;
+        Weapons.Def d = Weapons.DEFS[weapon];
+        float speed = (d.speed > 0f ? d.speed : 900f) * speedScale;
+        float ox = f.handX() + dirX * 14f;
+        float oy = f.handY() + dirY * 14f;
+        Projectile p = new Projectile(weapon, f.id == 0 ? 0 : 1, ox, oy,
+                dirX * speed, dirY * speed);
+        p.damage = d.damage * damageScale;
+        shots.add(p);
+        fx.sparks(ox, oy, d.color, 8, 150f);
+    }
+
+    /**
+     * Release-triggered weapon skill, the control mechanic at the heart of
+     * Supreme Duelist. Every weapon has a real, distinct skill and a cooldown.
+     */
+    private boolean useAbility(Fighter f, float dirX, float dirY) {
+        if (f.dead || f.down || f.hurtT > 0f || f.spawnT > 0f || f.abilityT > 0f) {
+            return false;
+        }
+        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
+        if (len < 0.35f) {
+            return false;
+        }
+        dirX /= len;
+        dirY /= len;
+        f.aimX = dirX;
+        f.aimY = dirY;
+        f.weaponAngle = (float) Math.atan2(dirY, dirX);
+        f.facing = dirX >= 0f ? 1 : -1;
+        int w = f.weapon;
+        f.abilityT = abilityCooldown(w);
+        float angle = f.weaponAngle;
+
+        switch (w) {
+            case 0: // Fists: rushing power jab
+                abilityDash(f, dirX, dirY, 650f, 1.65f);
+                break;
+            case 1: // Sword: directional dash slash
+                abilityDash(f, dirX, dirY, 820f, 1.45f);
+                break;
+            case 2: // Spear: long lunge
+                abilityDash(f, dirX, dirY, 940f, 1.35f);
+                break;
+            case 3: // Dual sabers: spinning all-around strike
+                abilityShockwave(f, 16f, 430f, 135f);
+                break;
+            case 4: // Kunai: three-blade fan
+                spreadShots(f, w, angle, 3, 0.17f, 0.80f, 1.08f);
+                break;
+            case 5: // Hammer: heavy shockwave
+                abilityShockwave(f, 24f, 850f, 190f);
+                break;
+            case 6: // Bow: triple-arrow volley
+                spreadShots(f, w, angle, 3, 0.13f, 0.80f, 1f);
+                break;
+            case 7: // Wand: five seeking bolts
+                spreadShots(f, w, angle, 5, 0.15f, 0.65f, 1.05f);
+                break;
+            case 8: // Bomb: cluster throw
+                spreadShots(f, w, angle, 3, 0.22f, 0.90f, 0.92f);
+                break;
+            case 9: // Boomerang: twin returning blades
+                spreadShots(f, w, angle, 2, 0.18f, 0.85f, 1.22f);
+                break;
+            case 10: // Pistol: three-round spread, as in the original's Gun
+                spreadShots(f, w, angle, 3, 0.12f, 0.85f, 1.05f);
+                break;
+            case 11: // Energy blade: dash plus a plasma wave
+                abilityDash(f, dirX, dirY, 880f, 1.35f);
+                spawnShot(f, w, dirX, dirY, 0.65f, 1.20f);
+                break;
+            default:
+                return false;
+        }
+        fx.ring(f.x, f.y - 6f, Weapons.color(w), 34f, 0.35f);
+        sfx(SoundFx.THROW);
+        host.vibrate(18);
+        return true;
+    }
+
+    private void abilityDash(Fighter f, float dx, float dy, float speed, float boost) {
+        f.vx = dx * speed;
+        f.vy = dy * speed;
+        if (f.onGround && dy >= -0.2f) {
+            f.vy -= 80f;
+        }
+        f.onGround = false;
+        f.swingBoost = boost;
+        f.startAttack();
+    }
+
+    private void spreadShots(Fighter f, int weapon, float angle, int count,
+                             float spread, float damageScale, float speedScale) {
+        for (int i = 0; i < count; i++) {
+            float a = angle + (i - (count - 1) * 0.5f) * spread;
+            spawnShot(f, weapon, (float) Math.cos(a), (float) Math.sin(a),
+                    damageScale, speedScale);
+        }
+    }
+
+    private void abilityShockwave(Fighter f, float damage, float knock, float radius) {
+        Fighter foe = fighters[1 - f.id];
+        fx.ring(f.x, f.y, Weapons.color(f.weapon), radius * 0.55f, 0.45f);
+        fx.sparks(f.x, f.y, Weapons.color(f.weapon), 28, 380f);
+        shake = Math.max(shake, 10f);
+        if (foe.dead) {
+            return;
+        }
+        float dx = foe.x - f.x;
+        float dy = foe.y - f.y;
+        float dist = (float) Math.sqrt(dx * dx + dy * dy);
+        if (dist < radius) {
+            float dir = dx >= 0f ? 1f : -1f;
+            foe.damage(damage, dir * knock, -260f, false);
+            fx.floatText(foe.x, foe.y - 60f, "-" + (int) damage, 0xFFFF8FA0);
+            hitStop = 0.05f;
+        }
+    }
+
+    private float abilityCooldown(int weapon) {
+        switch (weapon) {
+            case 0: return 2.4f;
+            case 1: return 3.0f;
+            case 2: return 3.4f;
+            case 3: return 3.2f;
+            case 4: return 3.6f;
+            case 5: return 4.5f;
+            case 6: return 3.8f;
+            case 7: return 4.2f;
+            case 8: return 5.0f;
+            case 9: return 4.4f;
+            case 10: return 3.6f;
+            case 11: return 4.5f;
+            default: return 3.5f;
+        }
+    }
+
     private void resolveMelee(Fighter a, Fighter b) {
         if (a.dead || b.dead || !a.meleeActive() || a.hitThisSwing) {
             return;
         }
-        float dx = b.x - a.x;
-        float fwd = dx * a.facing;
-        float reach = Weapons.DEFS[a.weapon].reach;
-        if (fwd > -14f && fwd < reach + 40f && Math.abs(b.y - a.y) < 66f) {
-            a.hitThisSwing = true;
-            Weapons.Def d = Weapons.DEFS[a.weapon];
-            boolean shielded = b.shieldOn && b.shield > 0;
-            b.facing = -a.facing;
-            b.damage(d.damage, a.facing * d.knock, -90f - d.knock * 0.12f, false);
-            float hx = (a.x + b.x) * 0.5f;
-            float hy = (a.y + b.y) * 0.5f - 4f;
-            if (shielded) {
-                sfx(SoundFx.SHIELD);
-                fx.sparks(hx, hy, 0xFF7DE8FF, 14, 260f);
-                fx.ring(hx, hy, 0xFF8FF0FF, 20, 0.3f);
-                shake = Math.max(shake, 3f);
-            } else {
-                sfx(SoundFx.HIT);
-                fx.sparks(hx, hy, 0xFFFFE38A, 16, 320f);
-                fx.blood(hx, hy, b.accent, 6, a.facing);
-                fx.ring(hx, hy, 0xFFFFD166, 16, 0.22f);
-                shake = Math.max(shake, 6f);
-                hitStop = 0.045f;
-                host.vibrate(12);
-                fx.floatText(hx, hy - 34f, "-" + (int) d.damage, 0xFFFF8FA0);
-            }
-            if (b.health <= 0f) {
-                fx.ring(b.x, b.y, 0xFFFF5D5D, 40, 0.5f);
-                shake = 12f;
-            }
+
+        // Collision follows the rendered weapon, not a broad rectangle around
+        // the fighter. Every simulated joint is a potential contact point, so
+        // aiming above, below or away from a flopped body really matters.
+        float hx = a.handX();
+        float hy = a.handY();
+        float tx = a.tipX();
+        float ty = a.tipY();
+        float contact = weaponContactDistance(b, hx, hy, tx, ty);
+        if (contact > 23f) {
+            return;
         }
+
+        a.hitThisSwing = true;
+        Weapons.Def d = Weapons.DEFS[a.weapon];
+        float boost = a.swingBoost > 0f ? a.swingBoost : 1f;
+        float damage = d.damage * boost;
+        boolean shielded = b.shieldOn && b.shield > 0;
+        float kx = (float) Math.cos(a.weaponAngle) * d.knock * boost;
+        float ky = (float) Math.sin(a.weaponAngle) * d.knock * 0.45f
+                - 90f - d.knock * 0.12f;
+        b.facing = kx >= 0f ? 1 : -1;
+        b.damage(damage, kx, ky, false);
+        float ix = (a.x + b.x) * 0.5f;
+        float iy = (a.y + b.y) * 0.5f - 4f;
+        if (shielded) {
+            sfx(SoundFx.SHIELD);
+            fx.sparks(ix, iy, 0xFF7DE8FF, 14, 260f);
+            fx.ring(ix, iy, 0xFF8FF0FF, 20, 0.3f);
+            shake = Math.max(shake, 3f);
+        } else {
+            sfx(SoundFx.HIT);
+            fx.sparks(ix, iy, 0xFFFFE38A, 16, 320f);
+            fx.blood(ix, iy, b.accent, 6, kx >= 0f ? 1f : -1f);
+            fx.ring(ix, iy, 0xFFFFD166, 16, 0.22f);
+            shake = Math.max(shake, 6f);
+            hitStop = 0.045f;
+            host.vibrate(12);
+            fx.floatText(ix, iy - 34f, "-" + (int) damage, 0xFFFF8FA0);
+        }
+        if (b.health <= 0f) {
+            fx.ring(b.x, b.y, 0xFFFF5D5D, 40, 0.5f);
+            shake = 12f;
+        }
+    }
+
+    /** Minimum distance from a fighter's body to the current weapon segment. */
+    private float weaponContactDistance(Fighter f, float x1, float y1, float x2, float y2) {
+        if (f.body == null) {
+            return pointSegmentDistance(f.x, f.y - 6f, x1, y1, x2, y2);
+        }
+        float best = Float.MAX_VALUE;
+        for (int i = 0; i < Ragdoll.N; i++) {
+            best = Math.min(best, pointSegmentDistance(
+                    f.body.x[i], f.body.y[i], x1, y1, x2, y2));
+        }
+        return best;
+    }
+
+    private float pointSegmentDistance(float px, float py,
+                                       float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float len2 = dx * dx + dy * dy;
+        float t = len2 < 0.001f ? 0f
+                : ((px - x1) * dx + (py - y1) * dy) / len2;
+        t = Math.max(0f, Math.min(1f, t));
+        float qx = x1 + dx * t;
+        float qy = y1 + dy * t;
+        float ox = px - qx;
+        float oy = py - qy;
+        return (float) Math.sqrt(ox * ox + oy * oy);
     }
 
     private void updateShots(float dt) {
@@ -1017,18 +1150,21 @@ public final class Game {
         phaseT = 2.2f;
         boolean bDead = fighters[1].dead;
         if (aDead && bDead) {
-            roundWinsA++;
-            roundWinsB++;
+            // A draw does not award a point. This also prevents a 2-2 score from
+            // being sent through endMatch(false) as a contradictory "defeat".
+            roundDraw = true;
         } else if (bDead) {
             roundWinsA++;
         } else {
             roundWinsB++;
         }
+        shots.clear(); // no post-K.O. projectile can kill the declared winner
+        releaseControls();
         shake = 10f;
         fx.ring((fighters[0].x + fighters[1].x) * 0.5f,
                 (fighters[0].y + fighters[1].y) * 0.5f - 10, 0xFFFFE38A, 60, 0.7f);
         if (profile.voice) {
-            host.announce("K O!");
+            announce(roundDraw ? "Double K O!" : "K O!");
         }
         sfx(SoundFx.KO);
         host.vibrate(60);
@@ -1040,6 +1176,8 @@ public final class Game {
             return;
         }
         roundNumber++;
+        roundDraw = false;
+        releaseControls();
         fighters[0].reset(Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET),
                 arena.spawnAy);
         fighters[1].reset(Maps.safeSpawnX(arena, arena.spawnBx, arena.spawnBy + Fighter.FEET),
@@ -1055,6 +1193,8 @@ public final class Game {
     }
 
     private void onEnemyDown() {
+        shots.clear();
+        releaseControls();
         wave++;
         fighters[0].score = wave - 1;
         profile.addCoins(20);
@@ -1063,7 +1203,7 @@ public final class Game {
         phaseT = 1.8f;
         shake = 8f;
         if (profile.voice) {
-            host.announce("Wave " + wave);
+            announce("Wave " + wave);
         }
     }
 
@@ -1116,7 +1256,7 @@ public final class Game {
         profile.save();
         host.vibrate(won ? 40 : 20);
         if (profile.voice) {
-            host.announce(won ? "Victory" : "Defeat");
+            announce(won ? "Victory" : "Defeat");
         }
         if (won) {
             fx.confetti(viewW, viewH);
@@ -1131,8 +1271,7 @@ public final class Game {
 
     private void updateWorldFx(float dt) {
         for (int i = 0; i < 2; i++) {
-            fighters[i].update(dt, arena, profile.gravity, profile.energyShield);
-            fireIfNeeded(fighters[i]);
+            fighters[i].update(dt, arena, profile.gravity, profile.energyShield, false);
         }
         updateShots(dt);
         updatePickups(dt);
@@ -1520,19 +1659,9 @@ public final class Game {
     }
 
     private void drawControls(Painter g) {
-        drawStick(g, stickA, 0xFF4D9BFF);
+        drawStick(g, stickA, 0xFF4D9BFF, fighters[0]);
         if (mode == M_LOCAL) {
-            drawStick(g, stickB, 0xFFFF6B8A);
-            drawButton(g, btnAtkA, "ATK", 0xFFFF6B8A);
-            drawButton(g, btnJumpA, "JMP", 0xFF6BD8FF);
-            drawButton(g, btnShieldA, "DEF", 0xFF9BE86B);
-            drawButton(g, btnAtkB, "ATK", 0xFFFF6B8A);
-            drawButton(g, btnJumpB, "JMP", 0xFF6BD8FF);
-            drawButton(g, btnShieldB, "DEF", 0xFF9BE86B);
-        } else {
-            drawButton(g, btnAtkB, "ATK", 0xFFFF6B8A);
-            drawButton(g, btnJumpB, "JMP", 0xFF6BD8FF);
-            drawButton(g, btnShieldB, "DEF", 0xFF9BE86B);
+            drawStick(g, stickB, 0xFFFF6B8A, fighters[1]);
         }
 
         // pause
@@ -1542,7 +1671,7 @@ public final class Game {
         g.rect(pauseRect.left + 25, pauseRect.top + 11, 5, 22, 0xCCFFFFFF);
     }
 
-    private void drawStick(Painter g, Stick s, int color) {
+    private void drawStick(Painter g, Stick s, int color, Fighter f) {
         g.line.setColor(0x44FFFFFF);
         g.line.setStrokeWidth(3);
         g.c.drawCircle(s.baseX, s.baseY, s.radius, g.line);
@@ -1554,18 +1683,24 @@ public final class Game {
         g.line.setColor(0x22FFFFFF);
         g.line.setStrokeWidth(2);
         g.c.drawCircle(s.baseX, s.baseY, s.radius * 0.55f, g.line);
+
+        float charge = 1f - Math.max(0f, Math.min(1f,
+                f.abilityT / abilityCooldown(f.weapon)));
+        boolean ready = f.abilityT <= 0f && !f.dead;
+        g.line.setColor(ready ? 0xFFFFD166 : Painter.withAlpha(color, 150));
+        g.line.setStrokeWidth(4f);
+        float ring = s.radius + 8f;
+        g.c.drawArc(new RectF(s.baseX - ring, s.baseY - ring,
+                s.baseX + ring, s.baseY + ring), -90f, 360f * charge, false, g.line);
+        g.size(10f);
+        float labelY = s.baseY + s.radius + 25f;
+        if (labelY > viewH - 5f) {
+            labelY = s.baseY - s.radius - 12f;
+        }
+        g.textCenter(ready ? "RELEASE · SKILL" : "SKILL " + (int) (charge * 100f) + "%",
+                s.baseX, labelY, ready ? 0xFFFFD166 : 0x99FFFFFF);
     }
 
-    private void drawButton(Painter g, TButton b, String label, int color) {
-        int fill = b.held ? Painter.withAlpha(color, 235) : Painter.withAlpha(color, 120);
-        g.circle(b.x, b.y, b.r, 0x22000000);
-        g.circle(b.x, b.y, b.r, fill);
-        g.line.setColor(Painter.withAlpha(0xFFFFFFFF, b.held ? 220 : 110));
-        g.line.setStrokeWidth(2);
-        g.c.drawCircle(b.x, b.y, b.r, g.line);
-        g.size(b.r * 0.52f);
-        g.textCenter(label, b.x, b.y + b.r * 0.18f, 0xFFFFFFFF);
-    }
 
     private void drawIntroOverlay(Painter g) {
         if (phase == PH_INTRO) {
@@ -1584,8 +1719,9 @@ public final class Game {
             g.size(14);
             g.textCenter(arena.name, viewW / 2, viewH - 26, 0x99FFFFFF);
         } else if (phase == PH_ROUND_END) {
-            g.size(84);
-            g.textShadowCenter("K.O.", viewW / 2, viewH / 2, 0xFFFF6B8A, 5);
+            g.size(roundDraw ? 62 : 84);
+            g.textShadowCenter(roundDraw ? "DOUBLE K.O." : "K.O.",
+                    viewW / 2, viewH / 2, 0xFFFF6B8A, 5);
         }
     }
 
@@ -1826,7 +1962,7 @@ public final class Game {
                 g.text("TAP AGAIN · " + d.cost, x + 10, y + 84, 0xFFFF6B8A);
             } else if (!owned) {
                 g.size(13);
-                g.text("🔒 " + d.cost, x + 10, y + 84, 0xFFFFC46B);
+                g.text("LOCKED · " + d.cost, x + 10, y + 84, 0xFFFFC46B);
             } else if (equipped) {
                 g.size(12);
                 g.text("EQUIPPED", x + 10, y + 84, 0xFFFFC46B);
@@ -1927,7 +2063,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.2.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -1950,23 +2086,23 @@ public final class Game {
         c.scale(scale, scale);
         header(g, "HOW TO PLAY");
         String[] lines = {
-                "1P — left joystick moves, right buttons ATK / JMP / DEF",
-                "2P — each player gets a joystick and buttons on their side",
-                "Tap the stick toward a direction, tap ATK to swing",
+                "1P — hold the left stick; 2P — each player uses their own stick",
+                "Hold a direction to move, aim your weapon and basic-attack",
+                "Push up to jump · push down to shield (or crouch when shields are off)",
+                "RELEASE a held stick while its ring is gold to use your weapon skill",
+                "Every weapon has a different skill; its ring refills after each use",
                 "Weapons drop from the sky. Walk over one to grab it",
-                "DEF blocks most damage but drains your blue shield bar",
-                "Break an opponent's poise and they go DOWN - heavy weapons do it in one hit",
-                "A downed fighter is limp and helpless, but stands up on their own",
+                "Break an opponent's poise and they go DOWN, then recover on their own",
                 "Water and lava end you instantly (unless Instant KO is off)",
-                "First to 2 rounds wins the duel",
+                "First to 2 rounds wins · a double K.O. replays without a point",
         };
         g.size(14);
         for (int i = 0; i < lines.length; i++) {
             g.text(lines[i], 46, 118 + i * 26, i % 2 == 0 ? 0xDDEEEEFF : 0xBBDDEEFF);
         }
         g.size(13);
-        g.text("Tips: grab a Hammer to launch rivals into the lava. "
-                + "Energy Blade has the longest reach.", 46, 118 + lines.length * 26 + 14, 0x99FFC46B);
+        g.text("Tips: Hammer releases a shockwave. Spear has the longest reach. "
+                + "Sword dashes in any direction.", 46, 118 + lines.length * 26 + 14, 0x99FFC46B);
         c.restore();
     }
 
@@ -2027,6 +2163,25 @@ public final class Game {
         uiBtns.add(b);
     }
 
+    /** Drops every held pointer and every queued gameplay action. */
+    private void releaseControls() {
+        stickA.release();
+        stickB.release();
+        for (int i = 0; i < 2; i++) {
+            Fighter f = fighters[i];
+            f.moveX = 0f;
+            f.jumpQueued = false;
+            f.attackQueued = false;
+            f.shieldHeld = false;
+        }
+    }
+
+    private void announce(String text) {
+        if (profile.voice) {
+            host.announce(text);
+        }
+    }
+
     private void sfx(int id) {
         if (profile.sound) {
             host.sfx(id);
@@ -2085,6 +2240,35 @@ public final class Game {
         return fighters[i].poseError();
     }
 
+    boolean debugUseAbility(int i, float dx, float dy) {
+        return useAbility(fighters[i], dx, dy);
+    }
+
+    int debugShotCount() {
+        return shots.size();
+    }
+
+    void debugSetRoundWins(int a, int b) {
+        roundWinsA = a;
+        roundWinsB = b;
+    }
+
+    int debugRoundWinsA() {
+        return roundWinsA;
+    }
+
+    int debugRoundWinsB() {
+        return roundWinsB;
+    }
+
+    int debugWave() {
+        return wave;
+    }
+
+    void debugSuppressPickups() {
+        spawnTimer = Float.MAX_VALUE;
+    }
+
     // --------------------------------------------------------------- helpers
 
     private Path triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
@@ -2120,48 +2304,6 @@ public final class Game {
         boolean onGround;
     }
 
-    private static final class TButton {
-        float x, y, r;
-        int id;
-        int pointer = -1;
-        boolean held;
-        boolean usedAsTap;
-
-        void set(float x, float y, float r, int id) {
-            this.x = x;
-            this.y = y;
-            this.r = r;
-            this.id = id;
-        }
-
-        boolean press(int pid, float px, float py) {
-            float dx = px - x;
-            float dy = py - y;
-            if (dx * dx + dy * dy <= (r + 16) * (r + 16)) {
-                pointer = pid;
-                held = true;
-                usedAsTap = false;
-                return true;
-            }
-            return false;
-        }
-
-        boolean release(int pid) {
-            if (pointer == pid) {
-                pointer = -1;
-                held = false;
-                usedAsTap = false;
-                return true;
-            }
-            return false;
-        }
-
-        boolean contains(float px, float py) {
-            float dx = px - x;
-            float dy = py - y;
-            return dx * dx + dy * dy < r * r;
-        }
-    }
 
     private static final class Stick {
         float baseX, baseY, radius = 84f;
@@ -2170,6 +2312,7 @@ public final class Game {
         int pointer = -1;
         float dx, dy;
         float startX, startY;
+        boolean jumpReady = true;
 
         void setBase(float x, float y, float r) {
             homeX = x;
@@ -2237,6 +2380,7 @@ public final class Game {
                 pointer = -1;
                 dx = 0;
                 dy = 0;
+                jumpReady = true;
                 baseX = homeX;
                 baseY = homeY;
             }
@@ -2244,6 +2388,15 @@ public final class Game {
 
         boolean active() {
             return pointer != -1;
+        }
+
+        void release() {
+            pointer = -1;
+            dx = 0f;
+            dy = 0f;
+            jumpReady = true;
+            baseX = homeX;
+            baseY = homeY;
         }
     }
 }

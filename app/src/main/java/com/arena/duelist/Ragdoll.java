@@ -59,6 +59,8 @@ public final class Ragdoll {
     public float muscle;
 
     private float quietT;
+    /** Previous Verlet step, used to preserve velocity when dt changes. */
+    private float lastDt = 1f / 60f;
 
     public Ragdoll(Fighter f) {
         this(f.x, f.y, f.facing, f.vx, f.vy, f.color, f.hair);
@@ -125,28 +127,39 @@ public final class Ragdoll {
 
     public void update(float dt, Maps.Arena arena, float[] tx, float[] ty, float muscle,
                        float gravityScale) {
-        this.muscle = (tx == null) ? 0f : Math.max(0f, Math.min(1f, muscle));
         if (dt <= 0f) {
             return;
         }
-        if (dt > 0.034f) {
-            dt = 0.034f;
+        // Small, deterministic substeps keep constraints stable without making
+        // the simulation run in slow motion on a lower-FPS device.
+        if (dt > 0.020f) {
+            int pieces = (int) Math.ceil(dt / 0.020f);
+            float step = dt / pieces;
+            for (int i = 0; i < pieces; i++) {
+                update(step, arena, tx, ty, muscle, gravityScale);
+            }
+            return;
         }
+        this.muscle = (tx == null) ? 0f : Math.max(0f, Math.min(1f, muscle));
         age += dt;
 
-        // Verlet integration: previous position carries the velocity
-        float damp = 0.993f;
+        // Verlet integration: previous position carries velocity. Scale that
+        // displacement by dt/lastDt so changing frame rate does not change the
+        // body's physical velocity, and make damping time-based as well.
+        float ratio = dt / lastDt;
+        float damp = (float) Math.pow(0.993f, dt * 60f);
         // standing bodies get reduced gravity: a 0.3s flinch should not collapse
         // the fighter to the floor, it should just wobble
         float gg = 2000f * gravityScale * dt * dt;
         for (int i = 0; i < N; i++) {
-            float nx = x[i] + (x[i] - px[i]) * damp;
-            float ny = y[i] + (y[i] - py[i]) * damp + gg;
+            float nx = x[i] + (x[i] - px[i]) * ratio * damp;
+            float ny = y[i] + (y[i] - py[i]) * ratio * damp + gg;
             px[i] = x[i];
             py[i] = y[i];
             x[i] = nx;
             y[i] = ny;
         }
+        lastDt = dt;
 
         // relax the skeleton, resolving collisions every pass
         float m = this.muscle;
@@ -214,7 +227,7 @@ public final class Ragdoll {
         for (int i = 0; i < N; i++) {
             speed = Math.max(speed, Math.abs(x[i] - px[i]) + Math.abs(y[i] - py[i]));
         }
-        quiet = speed < 0.4f;
+        quiet = speed / dt < 24f;
         quietT = quiet ? quietT + dt : 0f;
 
         if (m > 0f) {
@@ -297,8 +310,8 @@ public final class Ragdoll {
      */
     /** Adds an impulse to every joint without teleporting the body. */
     public void kick(float vx, float vy) {
-        float bx = vx / 60f;
-        float by = vy / 60f;
+        float bx = vx * lastDt;
+        float by = vy * lastDt;
         for (int i = 0; i < N; i++) {
             px[i] -= bx;
             py[i] -= by;
@@ -316,6 +329,7 @@ public final class Ragdoll {
         fade = 1f;
         age = 0f;
         quietT = 0f;
+        lastDt = 1f / 60f;
     }
 
     public void reborn() {
