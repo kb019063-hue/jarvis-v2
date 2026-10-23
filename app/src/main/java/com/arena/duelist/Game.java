@@ -2265,6 +2265,10 @@ public final class Game {
         return wave;
     }
 
+    void debugSuppressPickups() {
+        spawnTimer = Float.MAX_VALUE;
+    }
+
     // --------------------------------------------------------------- helpers
 
     private Path triangle(float x1, float y1, float x2, float y2, float x3, float y3) {

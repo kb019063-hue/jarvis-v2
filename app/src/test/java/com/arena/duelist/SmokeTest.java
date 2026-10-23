@@ -453,6 +453,49 @@ public class SmokeTest {
     }
 
     @Test
+    public void firstMapCpuOpeningDoesNotSuicideOrJumpLoop() {
+        boot();
+        game.profile.instantKO = true;
+        game.debugStartMatch(0, 0);
+        game.debugSuppressPickups();
+        Fighter cpu = game.debugFighter(1);
+        Fighter player = game.debugFighter(0);
+        cpu.giveWeapon(Weapons.FIST);
+        player.giveWeapon(Weapons.FIST);
+        // Run the real countdown rather than teleporting directly to a combat
+        // state: the reported failure happened as the opening fight started.
+        for (int i = 0; i < 300 && game.debugPhase() != 1; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("opening countdown should enter combat", 1, game.debugPhase());
+
+        int jumps = 0;
+        boolean wasGround = cpu.onGround;
+        StringBuilder trace = new StringBuilder();
+        for (int i = 0; i <= 720; i++) {
+            if (i % 60 == 0) {
+                trace.append("\nt=").append(i / 60)
+                        .append("s cpu=(").append((int) cpu.x).append(',').append((int) cpu.y)
+                        .append(") v=(").append((int) cpu.vx).append(',').append((int) cpu.vy)
+                        .append(") ground=").append(cpu.onGround)
+                        .append(" hp=").append((int) cpu.health)
+                        .append(" jumps=").append(jumps)
+                        .append(" phase=").append(game.debugPhase());
+            }
+            if (cpu.dead || player.dead) {
+                break;
+            }
+            game.tick(1f / 60f);
+            if (wasGround && !cpu.onGround && cpu.vy < -500f) {
+                jumps++;
+            }
+            wasGround = cpu.onGround;
+        }
+        assertFalse("CPU killed itself in the first-map opening:" + trace, cpu.dead);
+        assertTrue("CPU is stuck in a jump loop:" + trace, jumps <= 4);
+    }
+
+    @Test
     public void projectileLifetimeUsesSecondsNotFrames() {
         Projectile at60 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
         Projectile at30 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
