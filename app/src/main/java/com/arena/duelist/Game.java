@@ -1158,10 +1158,9 @@ public final class Game {
             }
             if (f.justDied) {
                 f.justDied = false;
-                if (f.body != null) {
-                    // keep the pose it died in, don't teleport it
-                    f.body.reborn();
-                }
+                f.ensureBody();
+                // keep the pose it died in, don't teleport it
+                f.body.reborn();
                 fx.dust(f.x, f.y + Fighter.FEET, 0x66FFFFFF, 6, 26f);
             }
         }
@@ -1170,6 +1169,9 @@ public final class Game {
     private void updateRagdolls(float dt) {
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
+            if (f.ragdolled() && f.body == null) {
+                f.ensureBody();
+            }
             Ragdoll body = f.body;
             if (body == null || !f.ragdolled()) {
                 continue; // standing bodies are stepped by Fighter.update

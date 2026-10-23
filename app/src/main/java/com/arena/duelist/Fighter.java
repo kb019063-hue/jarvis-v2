@@ -57,6 +57,17 @@ public final class Fighter {
         return dead || down;
     }
 
+    /**
+     * Create the simulated body on demand. A standing fighter grows one on its
+     * first update, but a hit can land before that tick - without this the
+     * fighter would be flagged down with no body to flop and never recover.
+     */
+    void ensureBody() {
+        if (body == null) {
+            body = new Ragdoll(this);
+        }
+    }
+
     /** Max distance between a joint and the pose it is meant to hold (px). */
     float poseError() {
         if (body == null) {
@@ -222,6 +233,7 @@ public final class Fighter {
         moveX = 0f;
         vx = kx * 0.35f;
         vy = Math.min(ky, -120f);
+        ensureBody(); // a fighter hit before its first tick still needs a body
     }
 
     /** Stand back up at a spot chosen by the caller. */
@@ -264,6 +276,7 @@ public final class Fighter {
         vy = -280f;
         vx = kx + facing * -90f;
         justDied = true;
+        ensureBody();
     }
 
     public void startAttack() {
