@@ -482,7 +482,7 @@ public final class Game {
         fighters[1].maxHealth = 100;
         fighters[1].health = 100;
         fighters[0].cpu = false;
-        fighters[1].cpu = true;
+        fighters[1].cpu = (newMode != M_LOCAL);
         fighters[1].name = mode == M_LOCAL ? "P2" : "CPU";
         fighters[0].name = "P1";
         fighters[0].color = profile.skinColor;
@@ -1330,14 +1330,12 @@ public final class Game {
     }
 
     private void drawControls(Painter g) {
-        Fighter a = fighters[0];
         drawStick(g, stickA, 0xFF4D9BFF);
-        drawButton(g, btnAtkA, "ATK", 0xFFFF6B8A);
-        drawButton(g, btnJumpA, "JMP", 0xFF6BD8FF);
-        drawButton(g, btnShieldA, "DEF", 0xFF9BE86B);
-
         if (mode == M_LOCAL) {
             drawStick(g, stickB, 0xFFFF6B8A);
+            drawButton(g, btnAtkA, "ATK", 0xFFFF6B8A);
+            drawButton(g, btnJumpA, "JMP", 0xFF6BD8FF);
+            drawButton(g, btnShieldA, "DEF", 0xFF9BE86B);
             drawButton(g, btnAtkB, "ATK", 0xFFFF6B8A);
             drawButton(g, btnJumpB, "JMP", 0xFF6BD8FF);
             drawButton(g, btnShieldB, "DEF", 0xFF9BE86B);
