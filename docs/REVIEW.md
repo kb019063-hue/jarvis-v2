@@ -43,14 +43,22 @@ Research baseline ([Play Store](https://play.google.com/store/apps/details?id=co
 | Gravity / instant KO / energy shield toggles | ✅ | ✅ (crouch added — see fix #6) |
 | Local 2P, same device | ✅ | ✅ (was broken — fix #1) |
 | Skin/weapon unlocks with coins | ✅ | ✅ (8 colours, 4 hair styles, 12 weapons) |
-| Ragdoll physics on hits and deaths | ✅ | ❌ rigid fighter; **spins** only on death |
+| Ragdoll physics | ✅ on every hit | ⚠️ jointed ragdoll on **death**; live hits use knockback + head lag |
 | 3–4 player, football, boss, zombie, map editor | ✅ | ❌ |
 | Content | 66 weapons / 46 maps | 12 / 10 |
 | Online | ❌ | ❌ |
 
 **Verdict:** recognisably the same genre and rule set, and the code quality is decent,
 but calling it "an exact game of Stickman Duelist" would be wrong. It is a
-small, clean tribute. The single biggest gap is the ragdoll simulation.
+small, clean tribute.
+
+**Update — ragdoll pass (this branch):** the rigid "spin on death" has been replaced
+by a real jointed ragdoll (`Ragdoll.java`): 11 points, 12 distance constraints
+(10 bones + 2 braces to stop the spine folding flat), 5 relaxation passes, gravity,
+damping, and platform collision with friction. The rest lengths are captured from the
+pose the fighter died in, so the hand-off is seamless, and the corpse fades once it
+settles. Live fighters still use arcade knockback — a hit is *not* a ragdoll event the
+way it is in the original — so this closes the death half of the gap, not the whole gap.
 
 ## 3. Bugs found and fixed in this branch
 
@@ -144,7 +152,7 @@ thumb on touch-down and returns to its drawn position on release.
 
 | # | Issue | Why |
 |---|---|---|
-| 1 | No ragdoll: the fighter is a rigid body; a KO is a rigid spin | This is a physics rewrite (jointed limbs, constraint solver), not a patch |
+| 1 | Ragdoll covers deaths, not hits: the live fighter is still a rigid body with canned animation | Making every hit a full ragdoll means driving the *living* skeleton too (and reconciling that with the arcade movement/attack code) |
 | 1b | The 1P stick is only drawn at its resting spot; while held it moves under the thumb | Intentional (floating stick), but means nothing is drawn where the thumb is not |
 | 2 | `Projectile.life` counts frames, not seconds | Lifetime drifts with frame rate; cosmetic |
 | 2b | Boomerang turnaround is time-based, so its range is a fixed `0.45 s × 820 = 369 px` | Throws beyond 369 px snap back before reaching the target; would need a distance/hit-based return |
@@ -158,10 +166,9 @@ thumb on touch-down and returns to its drawn position on release.
 
 ## 5. Recommendations, in order
 
-1. **Ragdoll pass.** Replace the rigid `Fighter` pose with a small Verlet/XPBD chain
-   (head, torso, 2 arms, 2 legs, 6–8 distance constraints). Hit reactions and deaths
-   then look like the original, and it is the one change that most affects "is this
-   Supreme Duelist?".
+1. ~~**Ragdoll pass.**~~ **Done** — `Ragdoll.java`, death only. Next step would be
+   ragdolling the living fighter on heavy hits (drive the pose from the same solver
+   and blend back to the arcade animation).
 2. **3–4 player local.** The input layer already supports N pointers; the fight loop
    assumes exactly two fighters, so this is a refactor of `fighters[]`, HUD and
    round logic.

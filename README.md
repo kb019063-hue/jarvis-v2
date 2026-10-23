@@ -24,7 +24,7 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 
 **Fighters**
 - Arcade stick-figure combat with knockback, hit-stop, screen shake, sparks/blood/confetti
-- KO launches the loser into a spinning, tumbling fall (the body is a rigid tumble, not a limb-by-limb ragdoll — see the gap analysis)
+- **Jointed ragdoll on KO** — the loser's body is an 11-point Verlet skeleton (12 distance constraints, 5 relaxation passes) that tumbles, hits the floor, flops and settles, then fades out
 - Energy shield (drains when hit, breaks into a stun), crouch, coyote-time jumps
 - Health + shield bars, round pips, floating damage numbers
 
@@ -70,7 +70,8 @@ Honest scorecard against *Supreme Duelist Stickman* (see [docs/REVIEW.md](docs/R
 | Core loop (1v1 stick duel, weapon drops, hazards) | ✅ | ✅ |
 | House rules (gravity / instant KO / energy shield) | ✅ | ✅ |
 | Local 2P on one device | ✅ | ✅ |
-| Ragdoll physics on every hit | ✅ | ❌ arcade fighter, ragdolls only after death |
+| Ragdoll death / K.O. tumble | ✅ | ✅ (new) |
+| Ragdoll physics | ✅ every hit | ⚠️ full jointed ragdoll on death; hits use knockback + head-lag, the live fighter is still a rigid arcade body |
 | 3–4 player party mode | ✅ | ❌ |
 | Football, boss tournament, zombie mode | ✅ | ❌ |
 | Map editor | ✅ | ❌ |
@@ -97,7 +98,8 @@ app/src/main/java/com/arena/duelist/
   MainActivity.java   activity, immersive fullscreen, TTS announcer, haptics
   GameView.java       SurfaceView + fixed-timestep render loop, multi-touch routing
   Game.java           screens, match flow, combat resolution, HUD, menus, touch controls
-  Fighter.java        movement, attacks, shield, ragdoll death, stick-figure rendering
+  Fighter.java        movement, attacks, shield, stick-figure rendering
+  Ragdoll.java        Verlet ragdoll: 11 joints, distance constraints, platform collision
   Weapons.java        12 weapon definitions
   Projectile.java     kunai/arrow/bolt/bomb/boomerang behaviour
   Maps.java           10 arenas: platforms, hazards, themes
