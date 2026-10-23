@@ -11,6 +11,9 @@ public final class Projectile {
     public boolean returning;
     public final int weapon;
     public float timer;
+    /** Boomerangs survive a hit: cap them to one hit per pass, two per throw. */
+    public int hitCount;
+    public boolean hitThisPass;
 
     public Projectile(int weapon, int owner, float x, float y, float vx, float vy) {
         Weapons.Def d = Weapons.DEFS[weapon];

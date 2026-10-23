@@ -1,6 +1,8 @@
 # Stick Duelist
 
-A native Android 2D physics stick-fighting game in the spirit of *Supreme Duelist Stickman* (Neron's Brother) — original code and art, built from scratch.
+A native Android 2D stick-fighting game in the spirit of *Supreme Duelist Stickman* (Neron's Brother) — original code and art, built from scratch.
+
+It is a **tribute, not a port**: 12 weapons, 10 arenas and three modes out of the original's 66 weapons, 46 maps and full party/ragdoll sandbox. See [the gap analysis](docs/REVIEW.md) for an honest side-by-side.
 
 **Install:** grab the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it (Android 7.0+, allow unknown sources). Landscape, touch only, works offline.
 
@@ -17,12 +19,17 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 | ![Arena picker](docs/screenshots/10-arena-picker.png) | ![Arsenal](docs/screenshots/11-arsenal.png) |
 | ![Lava Core](docs/screenshots/08-lava-core.png) | ![Orbital Deck](docs/screenshots/09-orbital-deck.png) |
 | ![Customize](docs/screenshots/14-customize.png) | ![Settings](docs/screenshots/13-settings.png) |
+| ![KO ragdoll](docs/screenshots/16-ragdoll-ko.png) | ![Ragdoll settled](docs/screenshots/17-ragdoll-settled.png) |
+| ![Knockdown](docs/screenshots/18-knockdown.png) | ![Recovered](docs/screenshots/19-recovered.png) |
+| ![Active body](docs/screenshots/21-standing-body.png) | ![Hit flop](docs/screenshots/22-hit-flop.png) |
 
 ## What's in it
 
 **Fighters**
 - Arcade stick-figure combat with knockback, hit-stop, screen shake, sparks/blood/confetti
-- Ragdoll deaths — bodies tumble and flop after a KO
+- **Active ragdoll** — every fighter is a simulated body from the first frame, not an animation: an 11-point Verlet skeleton (12 distance constraints, 5 relaxation passes) is pulled toward the animated pose by a "muscle", and the drawing is stroked straight from the joints. At full muscle the pose is exact; a hit kicks the body and lowers the muscle, so a jab is a 28 px flinch that recovers in 0.25 s and a hammer throws the body 133 px over 0.42 s
+- **Knockdown + auto-recovery** — break an opponent's poise and the muscle switches off entirely: the body goes fully limp and drops, then stands back up on its own (fists need 4 clean hits; a hammer does it in one). A downed fighter cannot move, attack or shield, and gets 0.6 s of invulnerability on standing up
+- **Deaths use the same body** — a KO keeps the skeleton it died with (`Ragdoll.reborn`), lets it tumble, settle and fade
 - Energy shield (drains when hit, breaks into a stun), crouch, coyote-time jumps
 - Health + shield bars, round pips, floating damage numbers
 
@@ -44,6 +51,7 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 **Meta**
 - Coins for wins and takedowns, weapon shop/arsenal, body colours, hair styles
 - House rules from the original: gravity on/off, instant KO on hazards, energy shield on/off
+- With the energy shield off, DEF makes your fighter bend down (like the original)
 - Voice announcer ("Three… Two… One… Fight!", "K.O.", "Victory") + synthesized sound effects
 - Everything persists in `SharedPreferences`
 
@@ -56,6 +64,27 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 | 2P right | right stick | ATK | JMP | DEF |
 
 Hold ATK to keep swinging on cooldown. Push the stick up or down while throwing to aim.
+DEF blocks with any weapon; with the energy-shield rule switched off it crouches instead.
+
+## How close is it to the original?
+
+Honest scorecard against *Supreme Duelist Stickman* (see [docs/REVIEW.md](docs/REVIEW.md)):
+
+| | Original | This build |
+|---|---|---|
+| Core loop (1v1 stick duel, weapon drops, hazards) | ✅ | ✅ |
+| House rules (gravity / instant KO / energy shield) | ✅ | ✅ |
+| Local 2P on one device | ✅ | ✅ |
+| Ragdoll death / K.O. tumble | ✅ | ✅ |
+| Knock-down + self recovery | ✅ | ✅ |
+| Ragdoll physics | ✅ every hit | ✅ the standing fighter is drawn from a simulated body: every hit flops it, heavy hits knock it down |
+| 3–4 player party mode | ✅ | ❌ |
+| Football, boss tournament, zombie mode | ✅ | ❌ |
+| Map editor | ✅ | ❌ |
+| Content volume | 66 weapons / 46 maps | 12 weapons / 10 maps |
+| Online play | ❌ (local only) | ❌ |
+
+So: the *feel* of the duel and the rule set are recognisably Supreme Duelist, the *sandbox* is not.
 
 ## Build
 
@@ -75,7 +104,8 @@ app/src/main/java/com/arena/duelist/
   MainActivity.java   activity, immersive fullscreen, TTS announcer, haptics
   GameView.java       SurfaceView + fixed-timestep render loop, multi-touch routing
   Game.java           screens, match flow, combat resolution, HUD, menus, touch controls
-  Fighter.java        movement, attacks, shield, ragdoll death, stick-figure rendering
+  Fighter.java        movement, attacks, shield, stick-figure rendering
+  Ragdoll.java        Verlet ragdoll: 11 joints, distance constraints, platform collision
   Weapons.java        12 weapon definitions
   Projectile.java     kunai/arrow/bolt/bomb/boomerang behaviour
   Maps.java           10 arenas: platforms, hazards, themes

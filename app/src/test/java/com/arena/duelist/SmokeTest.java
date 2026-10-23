@@ -177,14 +177,23 @@ public class SmokeTest {
         boot();
         tap(1020, 330);       // ARSENAL
         shot("11-arsenal");
-        tap(1020, 330);       // equip/buy a weapon
+        // Sword costs 120; the player starts with 250 coins. The first tap must
+        // only arm the purchase, the second must actually spend.
+        int coinsBefore = game.profile.coins;
+        tap(458, 166);
         shot("12-arsenal-after-tap");
+        assertEquals("one tap must not spend coins", coinsBefore, game.profile.coins);
+        assertTrue("one tap must not unlock", !game.profile.unlocked(1));
+        tap(458, 166);
+        assertEquals("second tap spends the price", coinsBefore - 120, game.profile.coins);
+        assertTrue("second tap unlocks the sword", game.profile.unlocked(1));
+        shot("20-arsenal-bought");
 
         boot();
         tap(1020, 434);       // SETTINGS
         shot("13-settings");
         tap(200, 147);        // flip gravity
-        tap(200, 209);        // flip instant KO
+        tap(200, 190);        // flip instant KO (row moved with the compact layout)
         tap(320, 399);        // CPU difficulty cycles
 
         boot();
@@ -195,8 +204,197 @@ public class SmokeTest {
         shot("14-customize");
 
         boot();
-        tap(786, 434);        // "?" how to play
+        tap(826, 434);        // "?" how to play (was 786: six units outside the button)
         shot("15-how-to-play");
+    }
+
+    @Test
+    public void koSpawnsARagdoll() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        // modest knockback so the body stays in frame for the screenshot
+        game.debugFighter(1).kill(120);
+
+        step(14);
+        assertEquals("a KO should hand the body over to the ragdoll", 1,
+                game.debugRagdollCount());
+        shot("16-ragdoll-ko");
+
+        step(66);
+        shot("17-ragdoll-settled");
+        assertEquals("the corpse should still be on stage mid round-end", 1,
+                game.debugRagdollCount());
+    }
+
+    @Test
+    public void ragdollPhysicsSettlesAndStaysFinite() {
+        Maps.Arena arena = Maps.ALL[0];
+        Ragdoll body = new Ragdoll(300, 560, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        for (int i = 0; i < 300; i++) {
+            body.update(1f / 60f, arena);
+        }
+        assertTrue("ragdoll should come to rest on the floor", body.quiet);
+        for (int i = 0; i < Ragdoll.N; i++) {
+            assertTrue("joint " + i + " went non-finite",
+                    !Float.isNaN(body.x[i]) && !Float.isInfinite(body.x[i])
+                            && !Float.isNaN(body.y[i]) && !Float.isInfinite(body.y[i]));
+        }
+        assertTrue("body should rest on a platform, not fall out of the arena",
+                body.y[Ragdoll.FOOT_L] < arena.bounds.bottom
+                        && body.y[Ragdoll.HEAD] < arena.bounds.bottom);
+    }
+
+    @Test
+    public void standingBodyHoldsThePose() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        step(40); // settle
+        Fighter cpu = game.debugFighter(1);
+        assertTrue("the live fighter should be drawn from a simulated body",
+                cpu.body != null);
+        assertTrue("at rest the body must track the animated pose, was "
+                + game.debugPoseError(1), game.debugPoseError(1) < 6f);
+        shot("21-standing-body");
+    }
+
+    @Test
+    public void everyHitFloppsThenRecovers() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        step(40);
+        Fighter cpu = game.debugFighter(1);
+
+        // a light jab must visibly disturb the body...
+        cpu.damage(8f, 250f, -90f, false);
+        float peak = 0f;
+        for (int i = 0; i < 8; i++) {
+            game.tick(1f / 60f);
+            peak = Math.max(peak, game.debugPoseError(1));
+        }
+        assertTrue("a jab should make the body flop, peak was " + peak, peak > 12f);
+        shot("22-hit-flop");
+
+        // ...and the muscle must pull it back onto the pose
+        step(40);
+        assertTrue("the body should recover to its pose, was " + game.debugPoseError(1),
+                game.debugPoseError(1) < 6f);
+        assertTrue("limp must decay to zero", game.debugLimp(1) < 0.01f);
+    }
+
+    @Test
+    public void heavyHitRagdollsThenAutoRecovers() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+
+        // a hammer-class blow: 40 damage, 600 knockback
+        cpu.damage(40f, 600f, -120f, false);
+        assertTrue("a heavy hit should knock the fighter down", cpu.down);
+
+        step(12);
+        assertEquals("the live body should be driven by a ragdoll", 1,
+                game.debugRagdollCount());
+        shot("18-knockdown");
+
+        int framesToRecover = 0;
+        float maxDownT = 0f;
+        while (cpu.down && framesToRecover < 300) {
+            game.tick(1f / 60f);
+            game.draw(canvas);
+            framesToRecover++;
+            maxDownT = Math.max(maxDownT, cpu.downT);
+        }
+        assertTrue("the fighter should have got back up (downT " + cpu.downT
+                        + ", max " + maxDownT + ", body " + (cpu.body != null)
+                        + ", dead " + cpu.dead + ", hp " + cpu.health + ")",
+                !cpu.down);
+        assertTrue("recovery should take under two seconds", framesToRecover < 120);
+        assertEquals("the ragdoll is released on recovery", 0, game.debugRagdollCount());
+        assertTrue("recovery must not kill the fighter", !cpu.dead && cpu.health > 0f);
+        assertTrue("poise resets after getting up", cpu.poise == 0f);
+        assertTrue("recovered fighters get brief invulnerability", cpu.iframes > 0f);
+
+        // and that grace period must actually absorb a follow-up hit
+        float healthAfter = cpu.health;
+        cpu.damage(20f, 300f, -90f, false);
+        assertEquals("i-frames should eat the follow-up hit", healthAfter, cpu.health, 0.001f);
+
+        step(40);
+        shot("19-recovered");
+    }
+
+    @Test
+    public void poiseBreaksAfterFourJabs() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        float perHit = 8f * (1f + 250f / 500f); // fists: 8 damage, 250 knockback
+        for (int i = 1; i <= 3; i++) {
+            cpu.damage(8f, 250f, -90f, false);
+            game.tick(1f / 60f);
+            assertTrue("jab " + i + " should not knock down yet", !cpu.down);
+            assertTrue("poise should build", Math.abs(cpu.poise - i * perHit) < 0.01f);
+        }
+        cpu.damage(8f, 250f, -90f, false);
+        assertTrue("the fourth jab breaks poise", cpu.down);
+    }
+
+    @Test
+    public void downedFighterIgnoresInput() {
+        // A ragdoll is deterministic, so the same knockdown must land in exactly
+        // the same place whether or not the player mashes the controls.
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.damage(40f, 600f, -120f, false);
+        step(30);
+        float controlX = cpu.x;
+        assertTrue("control run should still be prone or just recovered", !cpu.dead);
+
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        cpu = game.debugFighter(1);
+        cpu.damage(40f, 600f, -120f, false);
+        for (int i = 0; i < 30; i++) {
+            cpu.input(1f, 1f, -1f, true, true, true); // hold everything
+            game.tick(1f / 60f);
+            game.draw(canvas);
+            assertTrue("a prone fighter must never attack", !cpu.attacking);
+            assertTrue("a prone fighter must never shield", !cpu.shieldOn);
+        }
+        assertEquals("input must not move a downed fighter", controlX, cpu.x, 0.001f);
+    }
+
+    @Test
+    public void ragdollIsFiniteInEveryArena() {
+        boot();
+        for (int m = 0; m < Maps.ALL.length; m++) {
+            game.debugStartMatch(0, m);
+            game.debugStartFight();
+            game.debugFighter(1).kill(520);
+            for (int i = 0; i < 150; i++) {
+                game.tick(1f / 60f);
+                game.draw(canvas);
+            }
+            Ragdoll body = game.debugFighter(1).body;
+            if (body == null) {
+                continue; // settled, faded out or dropped into a pit: all fine
+            }
+            for (int j = 0; j < Ragdoll.N; j++) {
+                assertTrue("arena " + m + " joint " + j + " is non-finite",
+                        !Float.isNaN(body.x[j]) && !Float.isInfinite(body.x[j])
+                                && !Float.isNaN(body.y[j]) && !Float.isInfinite(body.y[j]));
+            }
+            assertTrue("arena " + m + " corpse escaped the arena",
+                    body.y[Ragdoll.HIPS] < Maps.ALL[m].bounds.bottom + 400f);
+        }
     }
 
     @Test
