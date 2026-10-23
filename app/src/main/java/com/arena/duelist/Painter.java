@@ -74,6 +74,12 @@ public final class Painter {
         c.drawRoundRect(x, y, x + w, y + h, rad, rad, line);
     }
 
+    public void oval(float cx, float cy, float rx, float ry, int color) {
+        p.setShader(null);
+        p.setColor(color);
+        c.drawOval(new RectF(cx - rx, cy - ry, cx + rx, cy + ry), p);
+    }
+
     public void circle(float x, float y, float r, int color) {
         p.setShader(null);
         p.setColor(color);

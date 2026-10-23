@@ -164,13 +164,13 @@ public final class Game {
         stickA.setBase(leftX, stickY, 74f);
         stickB.setBase(rightX, stickY, 74f);
 
-        btnAtkA.set(leftX + 116f, viewH - 66f, 42f, 0);
-        btnJumpA.set(leftX + 134f, viewH - 158f, 31f, 1);
-        btnShieldA.set(leftX + 60f, viewH - 192f, 26f, 2);
+        btnAtkA.set(leftX + 122f, viewH - 64f, 48f, 0);
+        btnJumpA.set(leftX + 142f, viewH - 168f, 35f, 1);
+        btnShieldA.set(leftX + 58f, viewH - 206f, 29f, 2);
 
-        btnAtkB.set(rightX - 116f, viewH - 66f, 42f, 0);
-        btnJumpB.set(rightX - 134f, viewH - 158f, 31f, 1);
-        btnShieldB.set(rightX - 60f, viewH - 192f, 26f, 2);
+        btnAtkB.set(rightX - 122f, viewH - 64f, 48f, 0);
+        btnJumpB.set(rightX - 142f, viewH - 168f, 35f, 1);
+        btnShieldB.set(rightX - 58f, viewH - 206f, 29f, 2);
 
         pauseRect.set(viewW - 60f, 88f, viewW - 20f, 128f);
     }
@@ -533,6 +533,12 @@ public final class Game {
         switch (phase) {
             case PH_INTRO:
                 stepIntro();
+                for (int i = 0; i < 2; i++) {
+                    Fighter f = fighters[i];
+                    f.update(dt, arena, profile.gravity, profile.energyShield);
+                    fireIfNeeded(f);
+                }
+                updateCamera(dt);
                 break;
             case PH_FIGHT:
                 stepFight(dt);
@@ -1162,8 +1168,8 @@ public final class Game {
         }
         for (int i = 0; i < 2; i++) {
             Fighter f = fighters[i];
-            g.alpha(46);
-            g.circle(f.x, f.y + Fighter.FEET - 2f, 19, 0xFF000000);
+            g.alpha(40);
+            g.oval(f.x, f.y + Fighter.FEET - 1f, 22, 6, 0xFF000000);
             g.reset();
             f.draw(g);
         }
@@ -1217,7 +1223,7 @@ public final class Game {
                 hill.lineTo(x + 150, baseY - hgt);
                 hill.lineTo(x + 320, baseY);
                 hill.close();
-                g.path(hill, Painter.withAlpha(deco, 130));
+                g.path(hill, Painter.withAlpha(deco, 55));
             }
         }
     }
@@ -1370,8 +1376,16 @@ public final class Game {
         if (phase == PH_INTRO) {
             int count = (int) Math.ceil(phaseT - 0.6f);
             String s = count > 0 ? String.valueOf(count) : "FIGHT!";
-            g.size(count > 0 ? 96 : 74);
-            g.textShadowCenter(s, viewW / 2, viewH / 2 + 20, 0xFFFFE38A, 5);
+            if (count > 0) {
+                g.line.setColor(0x66FFE38A);
+                g.line.setStrokeWidth(4f);
+                g.c.drawCircle(viewW / 2, viewH / 2 - 14, 66, g.line);
+                g.line.setColor(0x33FFFFFF);
+                g.line.setStrokeWidth(2f);
+                g.c.drawCircle(viewW / 2, viewH / 2 - 14, 82, g.line);
+            }
+            g.size(count > 0 ? 96 : 78);
+            g.textShadowCenter(s, viewW / 2, viewH / 2 + 20, count > 0 ? 0xFFFFE38A : 0xFFFF7A9A, 5);
             g.size(14);
             g.textCenter(arena.name, viewW / 2, viewH - 26, 0x99FFFFFF);
         } else if (phase == PH_ROUND_END) {
@@ -1385,6 +1399,8 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         introShake = 0;
+        g.rect(0, 0, viewW, 78, 0x66060A12);
+        g.rect(0, 78, viewW, 2, 0x22FFFFFF);
         float barW = Math.min(260f, viewW * 0.26f);
         drawHealth(g, 20, 22, barW, fighters[0], false);
         drawHealth(g, viewW - 20 - barW, 22, barW, fighters[1], true);
