@@ -19,8 +19,6 @@ public final class MainActivity extends Activity {
     private GameView view;
     private static TextToSpeech tts;
     private static boolean ttsReady;
-    private static SoundPool sounds;
-    private static boolean audioReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
