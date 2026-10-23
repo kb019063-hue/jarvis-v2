@@ -10,7 +10,6 @@ public final class Cpu {
     private float move;
     private boolean jump, attack, shield;
     private float aimX = 1f, aimY = 0f;
-    private float mistakeTimer;
 
     public void reset() {
         thinkTimer = 0;
@@ -20,7 +19,6 @@ public final class Cpu {
         shield = false;
         aimX = 1f;
         aimY = 0f;
-        mistakeTimer = 0;
     }
 
     public float move() {
@@ -83,14 +81,23 @@ public final class Cpu {
         aimY = dy < -60 ? -0.4f : (dy > 60 ? 0.5f : 0f);
 
         thinkTimer -= dt;
-        mistakeTimer -= dt;
 
-        boolean inHazardDanger = false;
-        for (int i = 0; i < arena.hazards.size(); i++) {
-            Maps.Hazard h = arena.hazards.get(i);
-            if (h.r.contains(me.x, me.y + 40) || h.r.contains(me.x, me.y + 70)) {
-                inHazardDanger = true;
+        // Look ahead instead of noticing a hazard only after it has already
+        // killed us. This check runs every frame, independently of thinkTimer.
+        boolean hazardHere = hazardDanger(me, arena, me.x);
+        boolean hazardAhead = hazardDanger(me, arena, me.x + dir * 85f);
+        if (hazardHere || hazardAhead) {
+            attack = false;
+            shield = false;
+            if (hazardAhead && !hazardHere && me.onGround && dist > 100f && dist < 270f) {
+                // A nearby opponent can be reached with a committed gap jump.
+                move = dir;
+                jump = true;
+            } else {
+                move = hazardHere ? (arena.bounds.centerX() > me.x ? 1f : -1f) : -dir;
+                jump = me.onGround;
             }
+            return;
         }
 
         if (thinkTimer > 0f) {
@@ -99,7 +106,6 @@ public final class Cpu {
         thinkTimer = reaction * (0.6f + rnd.nextFloat() * 0.9f);
 
         boolean foeAttacking = foe.attacking && foe.hurtT <= 0f;
-        boolean foeRanged = Weapons.DEFS[foe.weapon].type != Weapons.MELEE;
         boolean myRanged = Weapons.DEFS[me.weapon].type != Weapons.MELEE;
         float reach = Weapons.DEFS[me.weapon].type == Weapons.MELEE
                 ? Weapons.DEFS[me.weapon].reach : 340f;
@@ -107,14 +113,6 @@ public final class Cpu {
         shield = false;
         move = 0;
         attack = false;
-
-        if (inHazardDanger) {
-            // scramble back toward the middle of the map
-            float mid = arena.bounds.centerX();
-            move = mid > me.x ? 1f : -1f;
-            jump = rnd.nextFloat() < 0.5f;
-            return;
-        }
 
         if (me.health < 25 && rnd.nextFloat() < 0.5f * (1f - skill * 0.5f)) {
             // stay away and recover
@@ -192,5 +190,21 @@ public final class Cpu {
         if (rnd.nextFloat() < 0.03f + level * 0.01f) {
             jump = true;
         }
+    }
+
+    /** True when a horizontal position leads into a hazard on this level. */
+    private boolean hazardDanger(Fighter me, Maps.Arena arena, float x) {
+        for (int i = 0; i < arena.hazards.size(); i++) {
+            Maps.Hazard h = arena.hazards.get(i);
+            boolean nearX = x > h.r.left - 48f && x < h.r.right + 48f;
+            // Ignore hazards far below an upper platform, but see the pit below
+            // the floor the CPU is currently walking on.
+            boolean relevantY = me.y + Fighter.FEET > h.r.top - 175f
+                    && me.y - Fighter.HEAD < h.r.bottom + 20f;
+            if (nearX && relevantY) {
+                return true;
+            }
+        }
+        return false;
     }
 }
