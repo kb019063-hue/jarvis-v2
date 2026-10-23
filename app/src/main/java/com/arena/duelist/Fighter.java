@@ -228,7 +228,6 @@ public final class Fighter {
     public void recoverAt(float nx, float ny) {
         down = false;
         downT = 0f;
-        ragdoll = null;
         x = nx;
         y = ny;
         vx = 0f;
