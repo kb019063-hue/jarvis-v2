@@ -129,6 +129,13 @@ support), `Fighter.finalFlip`, `Fighter.deathVx`, `Game.introShake`,
 crouches when the energy-shield rule is off, matching the original), and the win
 streak/records, which were persisted but never updated or shown.
 
+### B6. 1P joystick snapped to full speed on touch
+In single player the whole left half of the screen grabs the stick, but `move()`
+measured the offset from the stick's **fixed base**, not from where the finger
+landed. Touching 300 units from the base therefore produced `clamped / max = 1.0`
+— instant full-speed running toward that corner. *Fix:* the stick now floats to the
+thumb on touch-down and returns to its drawn position on release.
+
 ### C2. Per-frame allocation on the Customize screen
 `drawStyle()` constructed a `Fighter` on every frame just to draw the preview.
 *Fix:* cached instance.
@@ -138,6 +145,7 @@ streak/records, which were persisted but never updated or shown.
 | # | Issue | Why |
 |---|---|---|
 | 1 | No ragdoll: the fighter is a rigid body; a KO is a rigid spin | This is a physics rewrite (jointed limbs, constraint solver), not a patch |
+| 1b | The 1P stick is only drawn at its resting spot; while held it moves under the thumb | Intentional (floating stick), but means nothing is drawn where the thumb is not |
 | 2 | `Projectile.life` counts frames, not seconds | Lifetime drifts with frame rate; cosmetic |
 | 2b | Boomerang turnaround is time-based, so its range is a fixed `0.45 s × 820 = 369 px` | Throws beyond 369 px snap back before reaching the target; would need a distance/hit-based return |
 | 3 | `Math.random()` in `Fighter.kill()` | Non-deterministic death spin, hurts reproducible tests |

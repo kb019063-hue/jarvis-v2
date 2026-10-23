@@ -1995,11 +1995,15 @@ public final class Game {
 
     private static final class Stick {
         float baseX, baseY, radius = 84f;
+        /** Resting position, restored when the floating stick is released. */
+        float homeX, homeY;
         int pointer = -1;
         float dx, dy;
         float startX, startY;
 
         void setBase(float x, float y, float r) {
+            homeX = x;
+            homeY = y;
             baseX = x;
             baseY = y;
             radius = r;
@@ -2021,6 +2025,12 @@ public final class Game {
             return false;
         }
 
+        /**
+         * Single-player stick: the whole left half of the screen is the stick,
+         * and it floats to wherever the thumb lands. It used to keep its base at
+         * the drawn position, so touching anywhere far from it produced instant
+         * full-speed movement in that direction.
+         */
         boolean grabAnywhere(int id, float px, float py) {
             if (pointer != -1) {
                 return false;
@@ -2028,6 +2038,8 @@ public final class Game {
             pointer = id;
             startX = px;
             startY = py;
+            baseX = px;
+            baseY = py;
             move(id, px, py);
             return true;
         }
@@ -2055,6 +2067,8 @@ public final class Game {
                 pointer = -1;
                 dx = 0;
                 dy = 0;
+                baseX = homeX;
+                baseY = homeY;
             }
         }
 
