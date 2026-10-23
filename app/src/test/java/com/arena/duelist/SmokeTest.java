@@ -301,12 +301,17 @@ public class SmokeTest {
         shot("18-knockdown");
 
         int framesToRecover = 0;
+        float maxDownT = 0f;
         while (cpu.down && framesToRecover < 300) {
             game.tick(1f / 60f);
             game.draw(canvas);
             framesToRecover++;
+            maxDownT = Math.max(maxDownT, cpu.downT);
         }
-        assertTrue("the fighter should have got back up", !cpu.down);
+        assertTrue("the fighter should have got back up (downT " + cpu.downT
+                        + ", max " + maxDownT + ", body " + (cpu.body != null)
+                        + ", dead " + cpu.dead + ", hp " + cpu.health + ")",
+                !cpu.down);
         assertTrue("recovery should take under two seconds", framesToRecover < 120);
         assertEquals("the ragdoll is released on recovery", 0, game.debugRagdollCount());
         assertTrue("recovery must not kill the fighter", !cpu.dead && cpu.health > 0f);
