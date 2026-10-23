@@ -292,20 +292,31 @@ public class SmokeTest {
     }
 
     @Test
-    public void downedFighterCannotAct() {
+    public void downedFighterIgnoresInput() {
+        // A ragdoll is deterministic, so the same knockdown must land in exactly
+        // the same place whether or not the player mashes the controls.
         boot();
         game.debugStartMatch(0, 0);
         game.debugStartFight();
         Fighter cpu = game.debugFighter(1);
         cpu.damage(40f, 600f, -120f, false);
-        step(4);
-
-        float startX = cpu.x;
-        cpu.input(1f, 1f, 0f, true, true, true);
         step(30);
-        assertTrue("a downed fighter must not walk", Math.abs(cpu.x - startX) < 60f);
-        assertTrue("a downed fighter must not attack", !cpu.attacking);
-        assertTrue("a downed fighter must not shield", !cpu.shieldOn);
+        float controlX = cpu.x;
+        assertTrue("control run should still be prone or just recovered", !cpu.dead);
+
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        cpu = game.debugFighter(1);
+        cpu.damage(40f, 600f, -120f, false);
+        for (int i = 0; i < 30; i++) {
+            cpu.input(1f, 1f, -1f, true, true, true); // hold everything
+            game.tick(1f / 60f);
+            game.draw(canvas);
+            assertTrue("a prone fighter must never attack", !cpu.attacking);
+            assertTrue("a prone fighter must never shield", !cpu.shieldOn);
+        }
+        assertEquals("input must not move a downed fighter", controlX, cpu.x, 0.001f);
     }
 
     @Test
