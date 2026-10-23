@@ -177,14 +177,23 @@ public class SmokeTest {
         boot();
         tap(1020, 330);       // ARSENAL
         shot("11-arsenal");
-        tap(1020, 330);       // equip/buy a weapon
+        // Sword costs 120; the player starts with 250 coins. The first tap must
+        // only arm the purchase, the second must actually spend.
+        int coinsBefore = game.profile.coins;
+        tap(458, 166);
         shot("12-arsenal-after-tap");
+        assertEquals("one tap must not spend coins", coinsBefore, game.profile.coins);
+        assertTrue("one tap must not unlock", !game.profile.unlocked(1));
+        tap(458, 166);
+        assertEquals("second tap spends the price", coinsBefore - 120, game.profile.coins);
+        assertTrue("second tap unlocks the sword", game.profile.unlocked(1));
+        shot("20-arsenal-bought");
 
         boot();
         tap(1020, 434);       // SETTINGS
         shot("13-settings");
         tap(200, 147);        // flip gravity
-        tap(200, 209);        // flip instant KO
+        tap(200, 190);        // flip instant KO (row moved with the compact layout)
         tap(320, 399);        // CPU difficulty cycles
 
         boot();
@@ -195,7 +204,7 @@ public class SmokeTest {
         shot("14-customize");
 
         boot();
-        tap(786, 434);        // "?" how to play
+        tap(826, 434);        // "?" how to play (was 786: six units outside the button)
         shot("15-how-to-play");
     }
 
