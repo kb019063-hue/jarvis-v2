@@ -1766,8 +1766,9 @@ public final class Game {
         c.scale(scale, scale);
         header(g, "SETTINGS");
 
-        float y = 116;
-        float rowH = 62;
+        // compact rows: with 62-unit rows the reset row and the footer collided
+        float y = 110;
+        float rowH = 54;
         float x = 44;
         float wRow = Math.min(560, viewW - 88);
         toggleRow(g, x, y, wRow, rowH, "Gravity", profile.gravity, A_GRAVITY);
