@@ -247,7 +247,7 @@ public class SmokeTest {
         cpu.damage(40f, 600f, -120f, false);
         assertTrue("a heavy hit should knock the fighter down", cpu.down);
 
-        step(8);
+        step(12);
         assertEquals("the live body should be driven by a ragdoll", 1,
                 game.debugRagdollCount());
         shot("18-knockdown");

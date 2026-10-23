@@ -1246,21 +1246,24 @@ public final class Game {
         float sep = Math.max(sepX, sepY * 1.5f);
         float t = Math.max(0f, Math.min(1f, (sep - 260f) / 900f));
         float targetZoom = ZOOM + (ZOOM_MIN - ZOOM) * t;
-        zoom += (targetZoom - zoom) * (1f - (float) Math.pow(0.02f, dt));
+        // zoom settles faster than the pan, otherwise a knockdown is already
+        // over before the camera has widened enough to show it
+        zoom += (targetZoom - zoom) * (1f - (float) Math.pow(0.00005f, dt));
 
         float vw = viewW / zoom;
         float vh = viewH / zoom;
         float tx = (focusX(fighters[0]) + focusX(fighters[1])) * 0.5f;
         float ty = (focusY(fighters[0]) + focusY(fighters[1])) * 0.5f;
-        // Once someone is out, lean the camera toward the body: ragdolls fly a
-        // long way, and an even midpoint left the corpse off-screen entirely.
-        boolean endPhase = phase == PH_ROUND_END || phase == PH_MATCH_END
-                || phase == PH_SURVIVAL_BREAK;
-        if (endPhase && fighters[0].dead != fighters[1].dead) {
-            int dead = fighters[0].dead ? 0 : 1;
-            int alive = 1 - dead;
-            tx = focusX(fighters[dead]) * 0.78f + focusX(fighters[alive]) * 0.22f;
-            ty = focusY(fighters[dead]) * 0.72f + focusY(fighters[alive]) * 0.28f;
+        // When someone is on the floor - knocked down or out - lean the camera
+        // toward that body: ragdolls fly a long way, and an even midpoint left
+        // the body off-screen entirely.
+        boolean aBody = fighters[0].dead || fighters[0].down;
+        boolean bBody = fighters[1].dead || fighters[1].down;
+        if (aBody != bBody) { // exactly one fighter is on the floor
+            int body = aBody ? 0 : 1;
+            int other = 1 - body;
+            tx = focusX(fighters[body]) * 0.78f + focusX(fighters[other]) * 0.22f;
+            ty = focusY(fighters[body]) * 0.72f + focusY(fighters[other]) * 0.28f;
         }
         float targetX = tx - vw * 0.5f;
         float targetY = ty - vh * 0.55f;
