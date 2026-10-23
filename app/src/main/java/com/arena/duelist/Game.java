@@ -113,6 +113,9 @@ public final class Game {
     private float viewH = 540f;
     private float camX, camY;
     private static final float ZOOM = 1.55f;
+    /** Camera zoom, eased between ZOOM and ZOOM_MIN as the fighters separate. */
+    private float zoom = ZOOM;
+    private static final float ZOOM_MIN = 1.02f;
     private float shake;
     private float hitStop;
     private float time;
@@ -1238,8 +1241,15 @@ public final class Game {
     }
 
     private void updateCamera(float dt) {
-        float vw = viewW / ZOOM;
-        float vh = viewH / ZOOM;
+        float sepX = Math.abs(focusX(fighters[0]) - focusX(fighters[1]));
+        float sepY = Math.abs(focusY(fighters[0]) - focusY(fighters[1]));
+        float sep = Math.max(sepX, sepY * 1.5f);
+        float t = Math.max(0f, Math.min(1f, (sep - 260f) / 900f));
+        float targetZoom = ZOOM + (ZOOM_MIN - ZOOM) * t;
+        zoom += (targetZoom - zoom) * (1f - (float) Math.pow(0.02f, dt));
+
+        float vw = viewW / zoom;
+        float vh = viewH / zoom;
         float tx = (focusX(fighters[0]) + focusX(fighters[1])) * 0.5f;
         float ty = (focusY(fighters[0]) + focusY(fighters[1])) * 0.5f;
         // Once someone is out, lean the camera toward the body: ragdolls fly a
@@ -1331,14 +1341,14 @@ public final class Game {
         g.gradient(0, 0, viewW, viewH, arena.skyTop, arena.skyBottom);
 
         c.save();
-        c.scale(ZOOM * 0.55f, ZOOM * 0.55f);
+        c.scale(zoom * 0.55f, zoom * 0.55f);
         c.translate(-camX * 0.35f + shx * 0.4f, -camY * 0.2f + shy * 0.4f);
         drawBackdrop(g);
         c.restore();
 
         c.save();
-        c.scale(ZOOM, ZOOM);
-        c.translate(-camX + shx / ZOOM, -camY + shy / ZOOM);
+        c.scale(zoom, zoom);
+        c.translate(-camX + shx / zoom, -camY + shy / zoom);
         drawArena(g);
         for (int i = 0; i < pickups.size(); i++) {
             drawPickup(g, pickups.get(i));
