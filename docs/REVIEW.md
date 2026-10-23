@@ -44,7 +44,7 @@ Research baseline ([Play Store](https://play.google.com/store/apps/details?id=co
 | Gravity / instant KO / energy shield toggles | ✅ | ✅ (crouch added — see fix #6) |
 | Local 2P, same device | ✅ | ✅ (was broken — fix #1) |
 | Skin/weapon unlocks with coins | ✅ | ✅ (8 colours, 4 hair styles, 12 weapons) |
-| Ragdoll physics | ✅ on every hit | ⚠️ jointed ragdoll on deaths **and** on poise-breaking hits; light hits use knockback + head lag |
+| Ragdoll physics | ✅ on every hit | ✅ the living fighter is drawn from a simulated body, so every hit flops it |
 | 3–4 player, football, boss, zombie, map editor | ✅ | ❌ |
 | Content | 66 weapons / 46 maps | 12 / 10 |
 | Online | ❌ | ❌ |
@@ -53,7 +53,17 @@ Research baseline ([Play Store](https://play.google.com/store/apps/details?id=co
 but calling it "an exact game of Stickman Duelist" would be wrong. It is a
 small, clean tribute.
 
-**Update — ragdoll-on-hit (this branch):** the living fighter now goes limp too.
+**Update — active ragdoll (this branch):** a fighter is no longer an animation with
+a ragdoll bolted on for deaths. The body exists from the first frame and the drawing
+is stroked straight from its joints, so *every* hit is a physics event: the blow adds
+an impulse and a `limp` value, and a muscle term pulls the joints toward the animated
+pose (quadratic in `limp`, so a jab is a 28 px flinch that is gone in 0.25 s and a
+hammer is a 133 px flop that takes 0.42 s). Standing bodies use 0.4× gravity so a
+flinch wobbles instead of collapsing, and at full muscle the pose is snapped exactly
+— the constraint solver leaves a few px of drift in the over-constrained torso
+triangle, and that drift was enough to make the fighter look deformed.
+
+**Update — ragdoll-on-hit:** the living fighter now goes limp too.
 Each hit builds poise (`damage × (1 + knockback/500)`); at 46 the fighter is knocked
 down and a ragdoll drives the body — fists need 4 clean hits, a hammer one. A downed
 fighter cannot move, attack or shield, the CPU punishes it, and it stands back up on
@@ -67,8 +77,7 @@ by a real jointed ragdoll (`Ragdoll.java`): 11 points, 12 distance constraints
 (10 bones + 2 braces to stop the spine folding flat), 5 relaxation passes, gravity,
 damping, and platform collision with friction. The rest lengths are captured from the
 pose the fighter died in, so the hand-off is seamless, and the corpse fades once it
-settles. Live fighters still use arcade knockback — a hit is *not* a ragdoll event the
-way it is in the original — so this closes the death half of the gap, not the whole gap.
+settles.
 
 ## 3. Bugs found and fixed in this branch
 
@@ -162,7 +171,7 @@ thumb on touch-down and returns to its drawn position on release.
 
 | # | Issue | Why |
 |---|---|---|
-| 1 | Light hits are still canned knockback: the fighter only ragdolls when poise breaks (every 4th jab or a heavy blow) | Simulating an active ragdoll on every hit means the *standing* fighter is also driven by the solver, which fights the arcade movement/attack animation |
+| 1 | ~~Light hits are still canned knockback~~ | **Fixed**: the standing fighter is driven by the physics body (see the active-ragdoll update above) — every hit flops the body, heavy ones knock it down |
 | 1b | The 1P stick is only drawn at its resting spot; while held it moves under the thumb | Intentional (floating stick), but means nothing is drawn where the thumb is not |
 | 2 | `Projectile.life` counts frames, not seconds | Lifetime drifts with frame rate; cosmetic |
 | 2b | Boomerang turnaround is time-based, so its range is a fixed `0.45 s × 820 = 369 px` | Throws beyond 369 px snap back before reaching the target; would need a distance/hit-based return |
@@ -176,9 +185,10 @@ thumb on touch-down and returns to its drawn position on release.
 
 ## 5. Recommendations, in order
 
-1. ~~**Ragdoll pass.**~~ **Done** — `Ragdoll.java`, on death *and* on poise-breaking
-   hits, with auto-recovery. Next step would be a fully active ragdoll while standing
-   (solver-driven pose blended into the arcade animation).
+1. ~~**Ragdoll pass.**~~ **Done** — `Ragdoll.java` drives every fighter, standing or
+   not: the body is simulated from the first frame, the animated pose is a muscle
+   target, and hits flop the body before it recovers. Deaths and knockdowns are the
+   same solver with the muscle switched off.
 2. **3–4 player local.** The input layer already supports N pointers; the fight loop
    assumes exactly two fighters, so this is a refactor of `fighters[]`, HUD and
    round logic.
