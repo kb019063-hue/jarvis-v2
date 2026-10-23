@@ -678,7 +678,9 @@ public final class Fighter {
             foot(g, body.x[Ragdoll.FOOT_R], body.y[Ragdoll.FOOT_R], bodyColor, outline);
         }
 
-        bone(g, cx, cy, hx, hy, 7f, bodyColor, outline);
+        // spine runs all the way to the head joint: the chest joint sits 8px
+        // below the neck, and stopping the bone there left the head detached
+        bone(g, nx, ny, hx, hy, 7f, bodyColor, outline);
         bone(g, cx, cy, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L], 6f, bodyColor, outline);
         bone(g, body.x[Ragdoll.ELBOW_L], body.y[Ragdoll.ELBOW_L],
                 body.x[Ragdoll.HAND_L], body.y[Ragdoll.HAND_L], 6f, bodyColor, outline);
