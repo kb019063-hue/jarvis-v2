@@ -46,11 +46,14 @@ public final class Fighter {
     public float walkPhase;
 
     public boolean dead;
-    public float deathRot;
-    public float deathSpin;
     public float deadT;
-    public float deathVx;
-    public boolean finalFlip;
+    /** Jointed body spawned on death; Game advances and draws it. */
+    public Ragdoll ragdoll;
+    /** One-shot: set by kill(), consumed by Game to spawn the ragdoll. */
+    public boolean justDied;
+    /** Head lag on hits: a small spring that makes the neck look jointed. */
+    public float wobX, wobY;
+    private float wobVx, wobVy;
 
     public int color = 0xFFF2F2F2;
     public int accent = 0xFFFF4D6D;
@@ -132,6 +135,9 @@ public final class Fighter {
         health -= dmg;
         vx += kx;
         vy += ky;
+        // the head lags behind the body on impact, opposite to the knockback
+        wobX -= kx * 0.010f;
+        wobY -= ky * 0.010f;
         hurtT = 0.22f;
         flashT = 0.16f;
         if (health <= 0f) {
@@ -153,8 +159,7 @@ public final class Fighter {
         attacking = false;
         vy = -280f;
         vx = kx + facing * -90f;
-        deathSpin = (float) ((Math.random() - 0.5) * 12f) + (kx > 0 ? 6f : -6f);
-        deathRot = 0f;
+        justDied = true;
     }
 
     public void startAttack() {
@@ -198,19 +203,16 @@ public final class Fighter {
         }
 
         if (dead) {
+            // the corpse is simulated by Ragdoll now; keep the fighter frozen so
+            // the camera does not chase an invisible rigid body into a pit
             deadT += dt;
-            vy += 1500f * dt;
-            vx *= 0.995f;
-            x += vx * dt;
-            y += vy * dt;
-            deathRot += deathSpin * dt;
-            deathSpin *= 0.985f;
-            collide(arena, dt);
-            if (deadT > 2.4f && onGround) {
-                deathSpin *= 0.8f;
-            }
             return;
         }
+
+        wobVx += (-wobX * 150f - wobVx * 13f) * dt;
+        wobVy += (-wobY * 150f - wobVy * 13f) * dt;
+        wobX += wobVx * dt;
+        wobY += wobVy * dt;
 
         boolean canAct = hurtT <= 0f && spawnT <= 0f;
         attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking;
@@ -235,8 +237,12 @@ public final class Fighter {
             }
         }
 
-        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0
-                && Weapons.DEFS[weapon].type == Weapons.MELEE;
+        // DEF blocks with any weapon. This used to be melee-only, so the shield
+        // silently did nothing while you were holding a gun, bow or wand.
+        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0;
+        // House rule from the original: with the energy shield switched off, DEF
+        // makes the fighter bend down (crouch) instead.
+        crouch = !shieldAllowed && shieldHeld && canAct && onGround;
 
         // Horizontal movement
         float target = canAct ? moveX : 0f;
@@ -304,7 +310,7 @@ public final class Fighter {
             }
         }
         if (onGround && !wasGround) {
-            spawnLandDust();
+            landed = true; // Game turns this into a dust puff
         }
 
         if (x < arena.bounds.left + HALF_W) {
@@ -317,11 +323,7 @@ public final class Fighter {
         }
     }
 
-    private void spawnLandDust() {
-        // handled by Game through a pending flag
-        landed = true;
-    }
-
+    /** Set for one frame when the fighter touches down; consumed by Game. */
     public boolean landed;
 
     private void collide(Maps.Arena arena, float dt) {
@@ -373,8 +375,12 @@ public final class Fighter {
         shield = maxShield;
         dead = false;
         deadT = 0;
-        deathRot = 0;
-        deathSpin = 0;
+        ragdoll = null;
+        justDied = false;
+        wobX = 0;
+        wobY = 0;
+        wobVx = 0;
+        wobVy = 0;
         attacking = false;
         attackT = 0;
         cooldown = 0;
@@ -397,10 +403,6 @@ public final class Fighter {
     public void draw(Painter g) {
         g.c.save();
         g.c.translate(x, y);
-
-        if (dead) {
-            g.c.rotate((float) Math.toDegrees(deathRot));
-        }
 
         float squash = 1f;
         if (crouch && onGround && !dead) {
@@ -452,15 +454,20 @@ public final class Fighter {
         float kneeY = hipY + (FEET - hipY) * 0.52f;
         leg(g, hipY, kneeY, legSwing, 1, bodyColor, outline);
         leg(g, hipY, kneeY, legSwing2, -1, bodyColor, outline);
-        limb(g, 0, neckY, 0, hipY, 7f, bodyColor, outline);
+        float nkX = wobX;
+        float nkY = neckY + wobY;
+        limb(g, nkX, nkY, 0, hipY, 7f, bodyColor, outline);
         limb(g, 0, shoulderY, -facing * 8f, shoulderY + 18f, 6f, bodyColor, outline);
         limb(g, 0, shoulderY, handXr, handYr, 6f, bodyColor, outline);
 
-        // head with outline
-        g.circle(0, neckY - headR + 4f, headR + 1.8f, outline);
-        g.circle(0, neckY - headR + 4f, headR, bodyColor);
-        g.circle(facing * 5f, neckY - headR + 2f, 2.4f, 0xFF101018);
+        // head with outline (offset by the neck spring so hits make it snap)
+        g.circle(nkX, nkY - headR + 4f, headR + 1.8f, outline);
+        g.circle(nkX, nkY - headR + 4f, headR, bodyColor);
+        g.circle(nkX + facing * 5f, nkY - headR + 2f, 2.4f, 0xFF101018);
+        g.c.save();
+        g.c.translate(wobX, wobY);
         drawHair(g, bodyColor);
+        g.c.restore();
 
         drawWeapon(g, handXr, handYr);
 

@@ -2,7 +2,6 @@ package com.arena.duelist;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.net.wifi.WifiManager;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -18,7 +17,6 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
     private GameThread thread;
     private final Game game;
     private volatile boolean running;
-    private WifiManager.WifiLock wifiLock;
 
     public GameView(Context context) {
         super(context);
@@ -75,7 +73,6 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
         if (t != null) {
             t.quit();
         }
-        releaseWifi();
     }
 
     @Override
@@ -112,28 +109,6 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
                 break;
         }
         return true;
-    }
-
-    public void acquireWifi() {
-        try {
-            WifiManager m = (WifiManager) getContext().getApplicationContext()
-                    .getSystemService(Context.WIFI_SERVICE);
-            if (m != null && wifiLock == null) {
-                wifiLock = m.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "duelist:wifi");
-                wifiLock.acquire();
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    public void releaseWifi() {
-        try {
-            if (wifiLock != null) {
-                wifiLock.release();
-            }
-        } catch (Throwable ignored) {
-        }
-        wifiLock = null;
     }
 
     /** Fixed-ish timestep render/draw loop. */

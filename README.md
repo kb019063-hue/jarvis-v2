@@ -1,6 +1,8 @@
 # Stick Duelist
 
-A native Android 2D physics stick-fighting game in the spirit of *Supreme Duelist Stickman* (Neron's Brother) — original code and art, built from scratch.
+A native Android 2D stick-fighting game in the spirit of *Supreme Duelist Stickman* (Neron's Brother) — original code and art, built from scratch.
+
+It is a **tribute, not a port**: 12 weapons, 10 arenas and three modes out of the original's 66 weapons, 46 maps and full party/ragdoll sandbox. See [the gap analysis](docs/REVIEW.md) for an honest side-by-side.
 
 **Install:** grab the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it (Android 7.0+, allow unknown sources). Landscape, touch only, works offline.
 
@@ -22,7 +24,7 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 
 **Fighters**
 - Arcade stick-figure combat with knockback, hit-stop, screen shake, sparks/blood/confetti
-- Ragdoll deaths — bodies tumble and flop after a KO
+- KO launches the loser into a spinning, tumbling fall (the body is a rigid tumble, not a limb-by-limb ragdoll — see the gap analysis)
 - Energy shield (drains when hit, breaks into a stun), crouch, coyote-time jumps
 - Health + shield bars, round pips, floating damage numbers
 
@@ -44,6 +46,7 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 **Meta**
 - Coins for wins and takedowns, weapon shop/arsenal, body colours, hair styles
 - House rules from the original: gravity on/off, instant KO on hazards, energy shield on/off
+- With the energy shield off, DEF makes your fighter bend down (like the original)
 - Voice announcer ("Three… Two… One… Fight!", "K.O.", "Victory") + synthesized sound effects
 - Everything persists in `SharedPreferences`
 
@@ -56,6 +59,25 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 | 2P right | right stick | ATK | JMP | DEF |
 
 Hold ATK to keep swinging on cooldown. Push the stick up or down while throwing to aim.
+DEF blocks with any weapon; with the energy-shield rule switched off it crouches instead.
+
+## How close is it to the original?
+
+Honest scorecard against *Supreme Duelist Stickman* (see [docs/REVIEW.md](docs/REVIEW.md)):
+
+| | Original | This build |
+|---|---|---|
+| Core loop (1v1 stick duel, weapon drops, hazards) | ✅ | ✅ |
+| House rules (gravity / instant KO / energy shield) | ✅ | ✅ |
+| Local 2P on one device | ✅ | ✅ |
+| Ragdoll physics on every hit | ✅ | ❌ arcade fighter, ragdolls only after death |
+| 3–4 player party mode | ✅ | ❌ |
+| Football, boss tournament, zombie mode | ✅ | ❌ |
+| Map editor | ✅ | ❌ |
+| Content volume | 66 weapons / 46 maps | 12 weapons / 10 maps |
+| Online play | ❌ (local only) | ❌ |
+
+So: the *feel* of the duel and the rule set are recognisably Supreme Duelist, the *sandbox* is not.
 
 ## Build
 

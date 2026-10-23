@@ -200,6 +200,42 @@ public class SmokeTest {
     }
 
     @Test
+    public void koSpawnsARagdoll() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        game.debugFighter(1).kill(420);
+
+        step(20);
+        assertEquals("a KO should hand the body over to the ragdoll", 1,
+                game.debugRagdollCount());
+        shot("16-ragdoll-ko");
+
+        step(70);
+        shot("17-ragdoll-settled");
+        assertEquals("the corpse should still be on stage mid round-end", 1,
+                game.debugRagdollCount());
+    }
+
+    @Test
+    public void ragdollPhysicsSettlesAndStaysFinite() {
+        Maps.Arena arena = Maps.ALL[0];
+        Ragdoll body = new Ragdoll(300, 560, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        for (int i = 0; i < 300; i++) {
+            body.update(1f / 60f, arena);
+        }
+        assertTrue("ragdoll should come to rest on the floor", body.quiet);
+        for (int i = 0; i < Ragdoll.N; i++) {
+            assertTrue("joint " + i + " went non-finite",
+                    !Float.isNaN(body.x[i]) && !Float.isInfinite(body.x[i])
+                            && !Float.isNaN(body.y[i]) && !Float.isInfinite(body.y[i]));
+        }
+        assertTrue("body should rest on a platform, not fall out of the arena",
+                body.y[Ragdoll.FOOT_L] < arena.bounds.bottom
+                        && body.y[Ragdoll.HEAD] < arena.bounds.bottom);
+    }
+
+    @Test
     public void everyArenaAndWeaponRenders() {
         boot();
         for (int m = 0; m < Maps.ALL.length; m++) {
