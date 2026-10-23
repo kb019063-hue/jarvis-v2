@@ -1680,7 +1680,7 @@ public final class Game {
         float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 100f;
         float minY = Math.min(focusY(fighters[0]), focusY(fighters[1])) - Fighter.HEAD - 35f;
         float maxY = Math.max(focusY(fighters[0]), focusY(fighters[1])) + Fighter.FEET + 22f;
-        final float top = 105f, bottom = viewH - 130f;
+        final float top = 105f, bottom = viewH - 180f;
         float fit = Math.min((viewW - 96f) / (maxX - minX), (bottom - top) / (maxY - minY));
         float targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM, fit));
         if (cameraReady && dt > 0f) {

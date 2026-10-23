@@ -12,6 +12,7 @@ public final class Cpu {
 
     private final Random rnd = new Random();
     private float thinkTimer;
+    private float attackTimer;
     private float move;
     private boolean jump, attack, shield;
     private float aimX = 1f, aimY = 0f;
@@ -23,6 +24,7 @@ public final class Cpu {
 
     public void reset() {
         thinkTimer = 0;
+        attackTimer = 0;
         move = 0;
         jump = false;
         attack = false;
@@ -75,6 +77,7 @@ public final class Cpu {
         }
 
         thinkTimer -= dt;
+        attackTimer = Math.max(0f, attackTimer - dt);
         jumpCooldown = Math.max(0f, jumpCooldown - dt);
 
         float reaction = 0.34f - level * 0.07f;      // seconds between re-decisions
@@ -129,7 +132,7 @@ public final class Cpu {
             jump = false;
             float ideal = Math.max(34f, me.weaponReach() * 0.65f + 28f);
             move = dist > ideal + 5f ? dir * 0.45f : 0f;
-            attack = ready;
+            attack = requestAttack(ready, level);
             return;
         }
 
@@ -140,14 +143,14 @@ public final class Cpu {
             jump = false;
             move = -dir;
             // A ranged fighter can still fire while retreating from an edge.
-            attack = ranged && sameHeight && ready && clearShot(me, foe, arena);
+            attack = requestAttack(ranged && sameHeight && ready && clearShot(me, foe, arena), level);
             return;
         }
 
         if (ranged) {
             // Fire at close range AND while changing distance, not just in a
             // narrow 260–360px band. Reaction delay governs travel, not cooldown.
-            attack = sameHeight && dist < 700f && ready && clearShot(me, foe, arena);
+            attack = requestAttack(sameHeight && dist < 700f && ready && clearShot(me, foe, arena), level);
             if (thinkTimer <= 0f) {
                 thinkTimer = reaction;
                 move = dist > 360f ? dir : (dist < 200f ? -dir * 0.65f : 0f);
@@ -161,6 +164,14 @@ public final class Cpu {
             move = dir;
             if (dy < -70f && me.onGround) requestJump(me);
         }
+    }
+
+    private boolean requestAttack(boolean ready, int level) {
+        if (!ready || attackTimer > 0f) return false;
+        // Difficulty changes cadence without ever creating an impossible range.
+        attackTimer = 0.12f + (3 - Math.max(0, Math.min(3, level))) * 0.12f
+                + rnd.nextFloat() * 0.08f;
+        return true;
     }
 
     private boolean clearShot(Fighter me, Fighter foe, Maps.Arena arena) {

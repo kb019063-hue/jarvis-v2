@@ -4,7 +4,7 @@ A native Android 2D stick-fighting game inspired by Neron's Brother's *Supreme D
 
 **Scope:** this is an independent, incomplete recreation—not a port and not feature-parity with the original. The current build has 12 weapons, 10 arenas and five mode families (six CPU/local entries). The larger content roster, 3–4 player party play, additional minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
 
-**Install v0.3.0:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
+**Install v0.3.1:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
 
 <p align="center"><img src="assets/icon_512.png" width="180" alt="Stick Duelist icon"></p>
 
@@ -50,7 +50,7 @@ There are **no separate attack, jump or defend buttons**. Each fighter uses one 
 - Poise breaks, limp knockdowns, automatic recovery and brief recovery invulnerability.
 - Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
 - Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
-- CPU spacing, punishing, committed platform-to-platform routes, non-jumping hazard retreats and occasional weapon-skill use across four difficulties.
+- CPU engagement at physical weapon range, ranged fire while repositioning, committed platform routes, hazard retreats and four attack cadences.
 - Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises.
 
 ### Football (new in 0.3.0)
@@ -87,7 +87,7 @@ Basic ranged attacks consume their displayed ammo. Skills use their own cooldown
 
 ### Arenas (10)
 
-Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night and Chaos Pit. Hazards include water, lava, spikes and pits, with floating platforms and themed backdrops.
+Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night and Chaos Pit. All ten now have an uninterrupted fighting floor between the spawns, with optional side ledges and themed backdrops. Lava/spike hazards are confined to the outer edges of the hazardous arenas, not holes across the central fighting route.
 
 ### Modes
 
@@ -105,6 +105,20 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
 
+## Playability fixes in 0.3.1
+
+This pass addresses phone reports of passive close-range AI, repeated corpse falls, pumping camera zoom and central pits that made fighting awkward:
+
+- Fixed an impossible fist-attack distance (body separation prevented the CPU entering its old attack range).
+- CPU basic melee now engages at physical weapon range; gunners shoot even when the opponent is close or while repositioning. Difficulties use different attack cadences.
+- Removed the ragdoll recreation path that could respawn a completed corpse at its death position.
+- Camera freezes during K.O./result sequences, fits living fighters within a HUD/control-safe viewport and uses zoom hysteresis rather than chasing corpses.
+- Rebuilt all ten arena layouts around continuous floors with grounded, same-level spawns. No central pit splits the fighting area; optional ledges sit toward the sides.
+- Reset CPU route state and camera framing at each new duel round.
+- Added tests that require actual CPU damage on every map, basic melee contact for every melee weapon, close-range gunfire, corpse removal, K.O. camera stability and viewport visibility at four aspect ratios.
+
+See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test build; real-phone feedback is still needed.
+
 ## Reliability fixes in 0.3.0
 
 - Projectiles resolve the nearest platform/fighter contact rather than platform list order.
@@ -114,7 +128,7 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 
 ## Validation
 
-The repository currently contains **49 authored Robolectric tests across two suites**. Coverage includes football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **58 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -127,7 +141,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 4`, `versionName 0.3.0`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 5`, `versionName 0.3.1`.
 
 ## Structure
 
@@ -142,7 +156,7 @@ app/src/main/java/com/arena/duelist/
   Projectile.java     thrown/projectile state and second-based lifetime
   Maps.java           10 arenas, platforms, hazards and themes
   Football.java       ball physics, contacts, power kicks, goals and pitch rendering
-  Cpu.java            spacing, punishes, weapon use and hazard avoidance
+  Cpu.java            engagement, ranged spacing, platform routes and edge checks
   Particles.java      combat and movement effects
   Painter.java        Canvas drawing helpers
   SoundFx.java        on-device synthesized sound effects

@@ -51,6 +51,18 @@ public class PlayabilityTest {
         me.spawnT = me.cooldown = 0f;
         cpu.think(me, foe, Maps.ALL[0], 1f / 60f, 1);
         assertTrue("close-range gunner must shoot, not only back away", cpu.attack());
+        Game g = boot(0, 8);
+        g.debugStartFight();
+        Fighter target = g.debugFighter(0), gunner = g.debugFighter(1);
+        target.reset(620, 590);
+        gunner.reset(730, 590);
+        gunner.giveWeapon(Weapons.PISTOL);
+        gunner.abilityT = 100f;
+        gunner.spawnT = target.spawnT = 0f;
+        for (int frame = 0; frame < 120 && target.health == target.maxHealth; frame++)
+            g.tick(1f / 60f);
+        assertTrue("a real close-range bullet must damage the opponent", target.health < target.maxHealth);
+        assertEquals("damage must come before running out of bullets", Weapons.PISTOL, gunner.weapon);
     }
 
     @Test public void everyMeleeCpuActuallyDamagesAnIdleOpponent() {
@@ -166,7 +178,7 @@ public class PlayabilityTest {
                 float feet = (f.y + Fighter.FEET - c[1]) * c[2];
                 assertTrue("fighter clipped horizontally at width " + width, x > 20 && x < vw - 20);
                 assertTrue("fighter clipped by HUD", head >= 100);
-                assertTrue("floor hidden by controls", feet <= 410);
+                assertTrue("floor hidden by controls", feet <= 360);
             }
         }
     }
