@@ -156,6 +156,47 @@ public class SmokeTest {
         assertTrue("screenshots should be written", shotsWritten >= 3);
     }
 
+    private void tap(float vx, float vy) {
+        float k = SCREEN_H / 540f;
+        game.pointerDown(9, vx * k, vy * k);
+        game.pointerUp(9, vx * k, vy * k);
+        game.tick(1f / 60f);
+        game.draw(canvas);
+    }
+
+    @Test
+    public void menusAreReachable() {
+        boot();
+        // title -> QUICK FIGHT -> arena picker
+        tap(1020, 154);
+        shot("10-arena-picker");
+        // pick first arena
+        tap(210, 166);
+        assertEquals("arena pick starts a match", 5, game.debugScreen());
+
+        boot();
+        tap(1020, 330);       // ARSENAL
+        shot("11-arsenal");
+        tap(1020, 330);       // equip/buy a weapon
+        shot("12-arsenal-after-tap");
+
+        boot();
+        tap(1020, 434);       // SETTINGS
+        shot("13-settings");
+        tap(200, 147);        // flip gravity
+        tap(200, 209);        // flip instant KO
+
+        boot();
+        tap(1020, 382);       // CUSTOMIZE
+        tap(134, 150);        // pick a body colour
+        tap(160, 262);        // pick hair
+        shot("14-customize");
+
+        boot();
+        tap(786, 434);        // "?" how to play
+        shot("15-how-to-play");
+    }
+
     @Test
     public void everyArenaAndWeaponRenders() {
         boot();
