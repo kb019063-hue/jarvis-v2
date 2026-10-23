@@ -308,6 +308,10 @@ public class SmokeTest {
         game.debugStartFight();
         game.profile.gravity = false;
         Fighter corpse = game.debugFighter(1);
+        // Keep the body clear of the spawn platform's underside: collision
+        // separation is independent of gravity and should not affect this check.
+        corpse.x = 700f;
+        corpse.y = 200f;
         corpse.vx = 0f;
         corpse.vy = 0f;
         corpse.dead = true;
@@ -943,8 +947,8 @@ public class SmokeTest {
         p.spawnT = 0f;
         foe.spawnT = 0f;
         p.giveWeapon(1);
-        game.pointerDown(1, 140, 600);
-        game.pointerMove(1, 140, 550); // up, but below the jump threshold
+        game.pointerDown(1, 123, 600);
+        game.pointerMove(1, 123, 550); // straight up, but below the jump threshold
 
         p.x = 500f;
         p.y = 590f;
