@@ -474,7 +474,7 @@ public final class Fighter {
 
         // shield bubble
         if (shieldOn && shield > 0) {
-            float a = 60 + (int) (40 * (shield / maxShield));
+            int a = 60 + (int) (40f * (shield / maxShield));
             g.line.setColor(Painter.withAlpha(0xFF6FE8FF, a));
             g.line.setStrokeWidth(3f);
             g.c.drawCircle(0, -6f, 46f, g.line);
