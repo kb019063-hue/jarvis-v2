@@ -20,12 +20,14 @@ These are rendered by the test suite on every push (Robolectric draws real frame
 | ![Lava Core](docs/screenshots/08-lava-core.png) | ![Orbital Deck](docs/screenshots/09-orbital-deck.png) |
 | ![Customize](docs/screenshots/14-customize.png) | ![Settings](docs/screenshots/13-settings.png) |
 | ![KO ragdoll](docs/screenshots/16-ragdoll-ko.png) | ![Ragdoll settled](docs/screenshots/17-ragdoll-settled.png) |
+| ![Knockdown](docs/screenshots/18-knockdown.png) | ![Recovered](docs/screenshots/19-recovered.png) |
 
 ## What's in it
 
 **Fighters**
 - Arcade stick-figure combat with knockback, hit-stop, screen shake, sparks/blood/confetti
-- **Jointed ragdoll on KO** — the loser's body is an 11-point Verlet skeleton (12 distance constraints, 5 relaxation passes) that tumbles, hits the floor, flops and settles, then fades out
+- **Jointed ragdoll** — an 11-point Verlet skeleton (12 distance constraints, 5 relaxation passes) drives the loser on a KO: it tumbles, hits the floor, flops, settles and fades
+- **Ragdoll on heavy hits** — break an opponent's poise and the *living* fighter goes limp and drops, then stands back up on its own (fists need 4 clean hits; a hammer does it in one). A downed fighter cannot move, attack or shield, and gets 0.6 s of invulnerability on standing up
 - Energy shield (drains when hit, breaks into a stun), crouch, coyote-time jumps
 - Health + shield bars, round pips, floating damage numbers
 
@@ -71,8 +73,9 @@ Honest scorecard against *Supreme Duelist Stickman* (see [docs/REVIEW.md](docs/R
 | Core loop (1v1 stick duel, weapon drops, hazards) | ✅ | ✅ |
 | House rules (gravity / instant KO / energy shield) | ✅ | ✅ |
 | Local 2P on one device | ✅ | ✅ |
-| Ragdoll death / K.O. tumble | ✅ | ✅ (new) |
-| Ragdoll physics | ✅ every hit | ⚠️ full jointed ragdoll on death; hits use knockback + head-lag, the live fighter is still a rigid arcade body |
+| Ragdoll death / K.O. tumble | ✅ | ✅ |
+| Knock-down + self recovery | ✅ | ✅ |
+| Ragdoll physics | ✅ every hit | ⚠️ ragdoll on KOs and on poise-breaking hits (plus head-lag on light hits); light hits are not full ragdoll simulation |
 | 3–4 player party mode | ✅ | ❌ |
 | Football, boss tournament, zombie mode | ✅ | ❌ |
 | Map editor | ✅ | ❌ |

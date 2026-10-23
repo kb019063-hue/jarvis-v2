@@ -1954,16 +1954,18 @@ public final class Game {
                 "Tap the stick toward a direction, tap ATK to swing",
                 "Weapons drop from the sky. Walk over one to grab it",
                 "DEF blocks most damage but drains your blue shield bar",
+                "Break an opponent's poise and they go DOWN - heavy weapons do it in one hit",
+                "A downed fighter is limp and helpless, but stands up on their own",
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins the duel",
         };
-        g.size(15);
+        g.size(14);
         for (int i = 0; i < lines.length; i++) {
-            g.text(lines[i], 46, 122 + i * 30, i % 2 == 0 ? 0xDDEEEEFF : 0xBBDDEEFF);
+            g.text(lines[i], 46, 118 + i * 26, i % 2 == 0 ? 0xDDEEEEFF : 0xBBDDEEFF);
         }
         g.size(13);
         g.text("Tips: grab a Hammer to launch rivals into the lava. "
-                + "Energy Blade has the longest reach.", 46, 122 + lines.length * 30 + 12, 0x99FFC46B);
+                + "Energy Blade has the longest reach.", 46, 118 + lines.length * 26 + 14, 0x99FFC46B);
         c.restore();
     }
 
