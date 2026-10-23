@@ -236,6 +236,31 @@ public class SmokeTest {
     }
 
     @Test
+    public void ragdollIsFiniteInEveryArena() {
+        boot();
+        for (int m = 0; m < Maps.ALL.length; m++) {
+            game.debugStartMatch(0, m);
+            game.debugStartFight();
+            game.debugFighter(1).kill(520);
+            for (int i = 0; i < 150; i++) {
+                game.tick(1f / 60f);
+                game.draw(canvas);
+            }
+            Ragdoll body = game.debugFighter(1).ragdoll;
+            if (body == null) {
+                continue; // settled, faded out or dropped into a pit: all fine
+            }
+            for (int j = 0; j < Ragdoll.N; j++) {
+                assertTrue("arena " + m + " joint " + j + " is non-finite",
+                        !Float.isNaN(body.x[j]) && !Float.isInfinite(body.x[j])
+                                && !Float.isNaN(body.y[j]) && !Float.isInfinite(body.y[j]));
+            }
+            assertTrue("arena " + m + " corpse escaped the arena",
+                    body.y[Ragdoll.HIPS] < Maps.ALL[m].bounds.bottom + 400f);
+        }
+    }
+
+    @Test
     public void everyArenaAndWeaponRenders() {
         boot();
         for (int m = 0; m < Maps.ALL.length; m++) {

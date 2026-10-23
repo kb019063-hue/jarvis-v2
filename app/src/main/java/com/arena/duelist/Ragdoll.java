@@ -175,7 +175,14 @@ public final class Ragdoll {
         y[b] -= oy;
     }
 
-    /** Pushes every joint out of the arena's platforms and kills bouncing. */
+    /**
+     * Pushes every joint out of the arena's platforms.
+     *
+     * Which side to eject from is decided by where the joint came from, not by
+     * the smallest penetration: thin ledges are only 20-26 units tall and joints
+     * are 3.5-9, so "smallest penetration" could pick the wrong face and leave a
+     * corpse impaled through a ledge, hanging in mid-air.
+     */
     private void collide(Maps.Arena arena) {
         for (int i = 0; i < N; i++) {
             float r = rad[i];
@@ -185,27 +192,22 @@ public final class Ragdoll {
                         || y[i] < q.top - r || y[i] > q.bottom + r) {
                     continue;
                 }
-                float penTop = (y[i] + r) - q.top;
-                float penBottom = q.bottom - (y[i] - r);
-                float penLeft = (x[i] + r) - q.left;
-                float penRight = q.right - (x[i] - r);
-                float m = Math.min(Math.min(penTop, penBottom), Math.min(penLeft, penRight));
-                if (m <= 0f) {
-                    continue;
-                }
-                if (m == penTop) {
+                boolean fromAbove = py[i] + r <= q.top + 2f;
+                boolean fromBelow = py[i] - r >= q.bottom - 2f;
+                if (fromAbove) {
                     y[i] = q.top - r;
-                    py[i] = y[i];                                   // no bounce
-                    px[i] = x[i] - (x[i] - px[i]) * 0.55f;          // ground friction
-                } else if (m == penBottom) {
+                    py[i] = y[i];                                  // no bounce
+                    px[i] = x[i] - (x[i] - px[i]) * 0.55f;         // ground friction
+                } else if (fromBelow) {
                     y[i] = q.bottom + r;
                     py[i] = y[i];
-                } else if (m == penLeft) {
-                    x[i] = q.left - r;
-                    px[i] = x[i];
-                    py[i] = y[i] - (y[i] - py[i]) * 0.7f;
                 } else {
-                    x[i] = q.right + r;
+                    // came in from a side (or started inside): eject horizontally
+                    if (px[i] < q.centerX()) {
+                        x[i] = q.left - r;
+                    } else {
+                        x[i] = q.right + r;
+                    }
                     px[i] = x[i];
                     py[i] = y[i] - (y[i] - py[i]) * 0.7f;
                 }
