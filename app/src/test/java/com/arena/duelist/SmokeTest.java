@@ -104,6 +104,10 @@ public class SmokeTest {
         shot("01-title");
 
         game.debugStartMatch(0, 3);
+        // This is a match-flow test, not a balance test: do not let random CPU
+        // combat end a round before the two scripted round-winning K.O.s.
+        game.debugFighter(0).maxHealth = 10000f;
+        game.debugFighter(0).health = 10000f;
         // 1P layout at 1600x720: one floating movement/weapon stick on the left
         game.pointerDown(1, 140, 600);
         game.pointerMove(1, 280, 600);
@@ -118,7 +122,8 @@ public class SmokeTest {
             if (frame % 3 == 0) {
                 game.draw(canvas);
             }
-            if (frame == 200 || frame == 900) {
+            if (frame == 200 || (frame > 200 && game.debugPhase() == 1
+                    && game.debugRoundWinsA() == 1 && !game.debugFighter(1).dead)) {
                 game.debugFighter(1).kill(0);
             }
             if (frame == 260) {
@@ -439,17 +444,35 @@ public class SmokeTest {
     @Test
     public void cpuRetreatsFromLavaEvenBetweenDecisions() {
         Cpu cpu = new Cpu();
-        Fighter me = new Fighter(1, "CPU", 380f, 630f, true);
-        Fighter foe = new Fighter(0, "P1", 1120f, 630f, false);
+        Maps.Arena arena = new Maps.Arena("Test Pit", 0, 0, 0, 0, 0,
+                1000, 800, 200, 900, 610)
+                .add(0, 640, 400, 180, 0)
+                .add(800, 640, 200, 180, 0)
+                .haz(400, 760, 400, 120, Maps.HAZ_LAVA);
+        Fighter me = new Fighter(1, "CPU", 380f, 610f, true);
+        Fighter foe = new Fighter(0, "P1", 900f, 610f, false);
         me.onGround = true;
         foe.onGround = true;
         // Prime a positive decision timer on a hazard-free map. Hazard avoidance
         // must still run immediately on the next call, not wait for AI thinking.
         cpu.think(me, foe, Maps.ALL[3], 1f / 60f, 3);
-        cpu.think(me, foe, Maps.ALL[2], 0.0001f, 3);
-        assertTrue("CPU on the safe left lip must retreat, not jump into lava",
-                cpu.move() < 0f);
-        assertTrue("the avoidance move should include an evasive jump", cpu.jump());
+        cpu.think(me, foe, arena, 0.0001f, 3);
+        assertTrue("with no usable route the CPU must retreat from lava", cpu.move() < 0f);
+        assertFalse("retreating must not retrigger the old panic-jump loop", cpu.jump());
+    }
+
+    @Test
+    public void fighterCanJumpThroughAndLandOnThinPlatform() {
+        Fighter f = new Fighter(1, "CPU", 1020f, 610f, true);
+        f.spawnT = 0f;
+        f.onGround = true;
+        f.jump();
+        for (int i = 0; i < 120; i++) {
+            f.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertTrue("fighter should land on the ledge above the first-map spawn", f.onGround);
+        assertEquals("Rooftop Dusk upper ledge must be physically reachable",
+                440f, f.y, 2f);
     }
 
     @Test
@@ -493,6 +516,8 @@ public class SmokeTest {
         }
         assertFalse("CPU killed itself in the first-map opening:" + trace, cpu.dead);
         assertTrue("CPU is stuck in a jump loop:" + trace, jumps <= 4);
+        assertTrue("CPU survived but never crossed the arena to engage:" + trace,
+                player.health < player.maxHealth || Math.abs(player.x - cpu.x) < 120f);
     }
 
     @Test

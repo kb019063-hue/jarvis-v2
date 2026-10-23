@@ -171,7 +171,10 @@ public final class Fighter {
 
     public void jump() {
         if (onGround || coyote > 0f) {
-            vy = -730f;
+            // High enough to reach the game's 170 px platform rises. The old
+            // -730 impulse topped out below them and made the intended routes
+            // unusable, especially on Rooftop Dusk.
+            vy = -850f;
             onGround = false;
             coyote = 0f;
         }
@@ -595,6 +598,9 @@ public final class Fighter {
         for (int i = 0; i < arena.platforms.size(); i++) {
             RectF r = arena.platforms.get(i).r;
             boolean overlapX = right > r.left + 2 && left < r.right - 2;
+            // Thin ledges are one-way platforms: land from above, but allow a
+            // fighter to jump up through them. Thick ground remains solid.
+            boolean oneWay = r.height() <= 32f;
 
             if (overlapX && vy >= 0 && prevBottom <= r.top + 8 && bottom >= r.top) {
                 y = r.top - FEET;
@@ -605,7 +611,7 @@ public final class Fighter {
                 top = y - HEAD;
                 continue;
             }
-            if (overlapX && vy < 0 && prevTop >= r.bottom - 8 && top <= r.bottom) {
+            if (!oneWay && overlapX && vy < 0 && prevTop >= r.bottom - 8 && top <= r.bottom) {
                 y = r.bottom + HEAD;
                 vy = 40;
                 top = y - HEAD;
