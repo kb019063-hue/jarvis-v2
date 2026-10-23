@@ -40,6 +40,11 @@ public final class GameView extends SurfaceView implements SurfaceHolder.Callbac
             public void vibrate(int ms) {
                 MainActivity.buzz(GameView.this, ms);
             }
+
+            @Override
+            public void sfx(int id) {
+                MainActivity.playSfx(id);
+            }
         });
     }
 

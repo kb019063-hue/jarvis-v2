@@ -40,6 +40,10 @@ public class SmokeTest {
         @Override
         public void vibrate(int ms) {
         }
+
+        @Override
+        public void sfx(int id) {
+        }
     }
 
     private Game newGame() {

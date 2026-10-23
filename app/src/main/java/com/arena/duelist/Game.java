@@ -18,6 +18,8 @@ public final class Game {
         void setBright(boolean on);
 
         void vibrate(int ms);
+
+        void sfx(int id);
     }
 
     // screens
@@ -201,6 +203,7 @@ public final class Game {
                 }
                 if (btnJumpA.press(id, x, y)) {
                     fighters[0].jumpQueued = true;
+                    sfx(SoundFx.JUMP);
                     return;
                 }
                 if (btnShieldA.press(id, x, y)) {
@@ -213,6 +216,7 @@ public final class Game {
                 }
                 if (btnJumpB.press(id, x, y)) {
                     fighters[1].jumpQueued = true;
+                    sfx(SoundFx.JUMP);
                     return;
                 }
                 if (btnShieldB.press(id, x, y)) {
@@ -233,6 +237,7 @@ public final class Game {
                     }
                     if (btnJumpB.press(id, x, y)) {
                         fighters[0].jumpQueued = true;
+                        sfx(SoundFx.JUMP);
                         return;
                     }
                     if (btnShieldB.press(id, x, y)) {
@@ -292,6 +297,7 @@ public final class Game {
     }
 
     private void act(int action) {
+        sfx(SoundFx.CLICK);
         if (action >= A_MAP_BASE && action < A_MAP_BASE + 100) {
             int idx = action - A_MAP_BASE;
             if (idx >= 0 && idx < Maps.ALL.length) {
@@ -695,6 +701,7 @@ public final class Game {
         p.damage = d.damage;
         shots.add(p);
         fx.sparks(ox, oy, d.color, 8, 150f);
+        sfx(SoundFx.THROW);
         host.vibrate(8);
 
         if (f.ammo > 0) {
@@ -723,10 +730,12 @@ public final class Game {
             float hx = (a.x + b.x) * 0.5f;
             float hy = (a.y + b.y) * 0.5f - 4f;
             if (shielded) {
+                sfx(SoundFx.SHIELD);
                 fx.sparks(hx, hy, 0xFF7DE8FF, 14, 260f);
                 fx.ring(hx, hy, 0xFF8FF0FF, 20, 0.3f);
                 shake = Math.max(shake, 3f);
             } else {
+                sfx(SoundFx.HIT);
                 fx.sparks(hx, hy, 0xFFFFE38A, 16, 320f);
                 fx.blood(hx, hy, b.accent, 6, a.facing);
                 fx.ring(hx, hy, 0xFFFFD166, 16, 0.22f);
@@ -810,6 +819,7 @@ public final class Game {
                         foe.facing = p.vx >= 0 ? 1 : -1;
                         foe.damage(p.damage * n,
                                 (p.vx > 0 ? 1 : -1) * p.knock, -120f, false);
+                        sfx(SoundFx.HIT);
                         fx.sparks(p.x, p.y, p.color, 12, 240f);
                         fx.floatText(p.x, p.y - 26f, "-" + (int) (p.damage * n), 0xFFFF8FA0);
                         shake = Math.max(shake, 4f);
@@ -873,6 +883,7 @@ public final class Game {
                 }
                 if (Math.abs(ft.x - pk.x) < 38f && Math.abs(ft.y - pk.y) < 60f) {
                     ft.giveWeapon(pk.weapon);
+                    sfx(SoundFx.PICKUP);
                     fx.ring(pk.x, pk.y, Weapons.color(pk.weapon), 18, 0.35f);
                     fx.floatText(pk.x, pk.y - 40f, Weapons.name(pk.weapon), Weapons.color(pk.weapon));
                     pickups.remove(i);
@@ -955,6 +966,7 @@ public final class Game {
         if (profile.voice) {
             host.announce("K O!");
         }
+        sfx(SoundFx.KO);
         host.vibrate(60);
     }
 
@@ -1774,6 +1786,12 @@ public final class Game {
         b.r.set(x, y, x + w, y + h);
         b.action = action;
         uiBtns.add(b);
+    }
+
+    private void sfx(int id) {
+        if (profile.sound) {
+            host.sfx(id);
+        }
     }
 
     // ------------------------------------------------------------ test hooks

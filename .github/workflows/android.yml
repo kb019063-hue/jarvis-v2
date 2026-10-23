@@ -59,6 +59,21 @@ jobs:
           gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
             -f body="$(cat /tmp/body.md)" > /dev/null || echo "comment post failed"
 
+      - name: Summarize build
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Build OK \`${GITHUB_SHA:0:7}\`"
+            echo '```'
+            grep -E "BUILD SUCCESSFUL|tests completed|[0-9]+ tests" build.log | head -10
+            ls -lh app/build/outputs/apk/debug/*.apk | awk '{print $5, $9}'
+            echo '```'
+          } > /tmp/summary.md
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -f body="$(cat /tmp/summary.md)" > /dev/null || true
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4

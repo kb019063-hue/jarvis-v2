@@ -1,9 +1,6 @@
 package com.arena.duelist;
 
 import android.app.Activity;
-import android.media.AudioAttributes;
-import android.media.AudioManager;
-import android.media.SoundPool;
 import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
@@ -65,14 +62,8 @@ public final class MainActivity extends Activity {
 
     private void initAudio() {
         try {
-            AudioAttributes attrs = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-            sounds = new SoundPool.Builder().setMaxStreams(12).setAudioAttributes(attrs).build();
-            audioReady = true;
-        } catch (Throwable t) {
-            audioReady = false;
+            SoundFx.init(this);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -117,11 +108,8 @@ public final class MainActivity extends Activity {
         }
     }
 
-    static void playTone(int kind) {
-        if (!audioReady || sounds == null) {
-            return;
-        }
-        // Tones are generated in Jam; SoundPool needs assets, so keep this a no-op hook.
+    static void playSfx(int id) {
+        SoundFx.play(id);
     }
 
     @Override
@@ -174,13 +162,10 @@ public final class MainActivity extends Activity {
         }
         tts = null;
         ttsReady = false;
-        if (sounds != null) {
-            try {
-                sounds.release();
-            } catch (Throwable ignored) {
-            }
+        try {
+            SoundFx.release();
+        } catch (Throwable ignored) {
         }
-        sounds = null;
         instance = null;
     }
 }
