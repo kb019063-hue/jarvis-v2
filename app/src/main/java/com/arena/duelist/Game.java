@@ -2063,7 +2063,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.2 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.2.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 

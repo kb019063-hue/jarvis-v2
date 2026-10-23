@@ -4,7 +4,7 @@ A native Android 2D stick-fighting game inspired by Neron's Brother's *Supreme D
 
 **Scope:** this is an independent, incomplete recreation—not a port and not yet feature-parity with the original. The current build has 12 weapons, 10 arenas and three modes. The larger content roster, 3–4 player party play, extra minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
 
-**Install v0.2:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
+**Install v0.2.1:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
 
 <p align="center"><img src="assets/icon_512.png" width="180" alt="Stick Duelist icon"></p>
 
@@ -47,7 +47,8 @@ There are **no separate attack, jump or defend buttons**. Each fighter uses one 
 - Melee contact follows the rendered weapon segment and tested body joints, including upward attacks; it is not a full continuous/swept physics simulation.
 - Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
 - Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
-- CPU spacing, punishing, predictive hazard avoidance and occasional weapon-skill use across four difficulties.
+- CPU spacing, punishing, committed platform-to-platform routes, non-jumping hazard retreats and occasional weapon-skill use across four difficulties.
+- Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises.
 
 ### Weapons and release skills (12)
 
@@ -87,7 +88,7 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 
 ## Validation
 
-`SmokeTest` currently contains **23 authored Robolectric tests**. Coverage includes real touch release, every weapon skill, directional melee contact, double-K.O. and Survival outcomes, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, CPU hazard avoidance, menu transitions and rendering every arena/weapon combination.
+`SmokeTest` currently contains **26 authored Robolectric tests**. Coverage includes real touch release, every weapon skill, directional melee contact, double-K.O. and Survival outcomes, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -100,7 +101,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 2`, `versionName 0.2`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 3`, `versionName 0.2.1`.
 
 ## Structure
 

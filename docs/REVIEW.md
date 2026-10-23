@@ -2,7 +2,7 @@
 
 **Review date:** 2026-10-23
 
-**Current application version:** 0.2 (`versionCode 2`)
+**Current application version:** 0.2.1 (`versionCode 3`)
 
 ## Verdict
 
@@ -38,14 +38,16 @@ Reference baseline: the [official Play Store listing](https://play.google.com/st
 - The render loop uses a fixed 60 Hz accumulator with a bounded catch-up count.
 - Ragdoll integration preserves velocity across timestep changes, uses time-based damping and substeps large updates for stability.
 - Projectile lifetime is measured in seconds rather than frames; particles use time-based damping.
-- CPU hazard checks run independently of its slower decision timer. The follow-up edge-case fix distinguishes actual danger from lookahead padding and leaves a hazard by its nearest edge instead of blindly moving toward arena centre.
+- CPU hazard checks run independently of its slower decision timer. Actual danger is distinguished from lookahead padding, and a retreat without a usable route no longer requests a jump.
+- **Hotfix 0.2.1:** a player report caught the 0.2 CPU repeatedly jumping and killing itself on the first map despite the earlier green suite. A real countdown simulation reproduced seven jumps in roughly three seconds followed by a water death. The CPU now commits to platform-to-platform routes and landings instead of panic-jumping, and the first-map test requires survival **and engagement** with the player.
+- Thin ledges now behave as one-way platforms for fighters, without side/underside blocking, and the jump impulse can clear the maps' 170 px rises. This makes the intended upper route physically usable instead of merely assumed by AI logic.
 - Voice-off gates both match and UI announcements. Sound remains independently configurable.
 - The arsenal uses text for its locked state rather than an emoji that can fall back to a missing-glyph box.
-- Application metadata moved from 0.1/1 to 0.2/2.
+- Application metadata moved from 0.1/1 to 0.2.1/3.
 
 ## Regression suite
 
-`app/src/test/java/com/arena/duelist/SmokeTest.java` contains **23 authored Robolectric tests**, not merely 23 assertions. The suite covers:
+`app/src/test/java/com/arena/duelist/SmokeTest.java` contains **26 authored Robolectric tests**, not merely 26 assertions. The suite covers:
 
 1. Menu-to-match flow and rendered quick-match frames.
 2. Local Duel and Survival flow.
@@ -54,22 +56,25 @@ Reference baseline: the [official Play Store listing](https://play.google.com/st
 5. K.O. ragdoll creation.
 6. Ragdoll settling and finite joints.
 7. Standing active-body pose tracking.
-8. Light-hit flop and recovery.
+8. Light-hit flop and recovery with AI input isolated.
 9. Heavy-hit knockdown, recovery and invulnerability.
 10. Four-jab poise break.
 11. Downed fighters ignoring input.
 12. Ragdoll stability in every arena.
 13. Equivalent ragdoll motion at 30 and 60 updates per second.
-14. CPU retreat from lava even between AI decisions.
-15. Second-based projectile lifetime at different update rates.
-16. Double-K.O. replay without a point.
-17. Survival mutual-K.O. defeat without a phantom wave.
-18. Countdown input lockout and stale-action clearing.
-19. Voice-off suppression of UI and match speech.
-20. Real pointer release activating a weapon skill.
-21. A concrete effect for every one of the twelve weapon skills.
-22. Upward melee contact following the weapon direction.
-23. Rendering every arena and weapon combination.
+14. CPU lava retreat without a panic jump when no route exists.
+15. Jumping through and landing on a reachable thin ledge.
+16. First-map opening CPU survival, no jump loop, and actual engagement.
+17. CPU opening survival in every hazard arena.
+18. Second-based projectile lifetime at different update rates.
+19. Double-K.O. replay without a point.
+20. Survival mutual-K.O. defeat without a phantom wave.
+21. Countdown input lockout and stale-action clearing.
+22. Voice-off suppression of UI and match speech.
+23. Real pointer release activating a weapon skill.
+24. A concrete effect for every one of the twelve weapon skills.
+25. Upward melee contact following the weapon direction.
+26. Rendering every arena and weapon combination.
 
 The same suite writes actual rendered PNGs to `docs/screenshots` through CI. These images expose layout/rendering regressions, but they do not prove touch latency, device performance or gameplay feel.
 

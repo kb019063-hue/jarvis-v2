@@ -522,6 +522,33 @@ public class SmokeTest {
     }
 
     @Test
+    public void cpuDoesNotSuicideInAnyHazardArenaOpening() {
+        boot();
+        game.profile.instantKO = true;
+        for (int m = 0; m < Maps.ALL.length; m++) {
+            if (Maps.ALL[m].hazards.isEmpty()) {
+                continue;
+            }
+            game.debugStartMatch(0, m);
+            game.debugSuppressPickups();
+            Fighter cpu = game.debugFighter(1);
+            Fighter player = game.debugFighter(0);
+            cpu.giveWeapon(Weapons.FIST);
+            player.giveWeapon(Weapons.FIST);
+            player.maxHealth = 10000f;
+            player.health = 10000f;
+            for (int i = 0; i < 300 && game.debugPhase() != 1; i++) {
+                game.tick(1f / 60f);
+            }
+            for (int i = 0; i < 480 && !cpu.dead; i++) {
+                game.tick(1f / 60f);
+            }
+            assertFalse("CPU killed itself during the opening of " + Maps.ALL[m].name
+                    + " at (" + cpu.x + ',' + cpu.y + ')', cpu.dead);
+        }
+    }
+
+    @Test
     public void projectileLifetimeUsesSecondsNotFrames() {
         Projectile at60 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
         Projectile at30 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
