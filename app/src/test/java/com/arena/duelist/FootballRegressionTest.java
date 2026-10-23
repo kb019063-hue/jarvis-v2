@@ -117,6 +117,7 @@ public class FootballRegressionTest {
         ball.x = g.debugFighter(0).x + 60f;
         ball.y = g.debugFighter(0).y + 15f;
         g.debugFighter(0).spawnT = 0f;
+        g.debugFighter(0).abilityT = 0f; // Fully charged: only countdown should reject the input.
         float y = ball.y;
         float scale = 720f / 540f;
         g.pointerDown(1, 92f * scale, 448f * scale);
