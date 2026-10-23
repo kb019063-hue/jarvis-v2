@@ -417,7 +417,11 @@ public final class Game {
             return true;
         }
         if (screen != S_TITLE) {
-            screen = (screen == S_RESULT) ? S_TITLE : S_TITLE;
+            screen = S_TITLE;
+            // Back is a screen transition too: do not leave the old menu's
+            // buttons tappable until the next draw rebuilds the title hitboxes.
+            uiBtns.clear();
+            releaseControls();
             return true;
         }
         return false;
@@ -1958,7 +1962,7 @@ public final class Game {
                 g.text("TAP AGAIN · " + d.cost, x + 10, y + 84, 0xFFFF6B8A);
             } else if (!owned) {
                 g.size(13);
-                g.text("🔒 " + d.cost, x + 10, y + 84, 0xFFFFC46B);
+                g.text("LOCKED · " + d.cost, x + 10, y + 84, 0xFFFFC46B);
             } else if (equipped) {
                 g.size(12);
                 g.text("EQUIPPED", x + 10, y + 84, 0xFFFFC46B);
@@ -2059,7 +2063,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.2 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 

@@ -104,7 +104,7 @@ public class SmokeTest {
         shot("01-title");
 
         game.debugStartMatch(0, 3);
-        // 1P layout at 1600x720: stick left, buttons right
+        // 1P layout at 1600x720: one floating movement/weapon stick on the left
         game.pointerDown(1, 140, 600);
         game.pointerMove(1, 280, 600);
         game.pointerDown(2, 1290, 621);
@@ -211,6 +211,21 @@ public class SmokeTest {
         boot();
         tap(826, 434);        // "?" how to play (was 786: six units outside the button)
         shot("15-how-to-play");
+    }
+
+    @Test
+    public void androidBackClearsStaleMenuHitboxes() {
+        boot();
+        tap(1020, 330); // Arsenal
+        int coins = game.profile.coins;
+        assertTrue("Back should leave the arsenal", game.backPressed());
+        assertEquals("Back should return to the title", 0, game.debugScreen());
+        // Before the next draw, this used to hit the invisible Sword card and
+        // arm a purchase while the player was already back on the title screen.
+        tap(458, 166);
+        assertEquals("stale arsenal hitboxes must not spend coins", coins, game.profile.coins);
+        assertFalse("stale arsenal hitboxes must not unlock weapons", game.profile.unlocked(1));
+        assertEquals("the stale tap must not navigate away from title", 0, game.debugScreen());
     }
 
     @Test
@@ -403,6 +418,41 @@ public class SmokeTest {
     }
 
     @Test
+    public void ragdollTimingMatchesAcrossFrameRates() {
+        Maps.Arena arena = Maps.ALL[0];
+        Ragdoll at60 = new Ragdoll(300, 400, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        Ragdoll at30 = new Ragdoll(300, 400, 1, 300f, -200f, 0xFFF2F2F2, 0);
+        for (int i = 0; i < 30; i++) {
+            at60.update(1f / 60f, arena);
+        }
+        for (int i = 0; i < 15; i++) {
+            at30.update(1f / 30f, arena);
+        }
+        for (int i = 0; i < Ragdoll.N; i++) {
+            assertEquals("joint " + i + " x drifted with render rate",
+                    at60.x[i], at30.x[i], 0.02f);
+            assertEquals("joint " + i + " y drifted with render rate",
+                    at60.y[i], at30.y[i], 0.02f);
+        }
+    }
+
+    @Test
+    public void cpuRetreatsFromLavaEvenBetweenDecisions() {
+        Cpu cpu = new Cpu();
+        Fighter me = new Fighter(1, "CPU", 380f, 630f, true);
+        Fighter foe = new Fighter(0, "P1", 1120f, 630f, false);
+        me.onGround = true;
+        foe.onGround = true;
+        // Prime a positive decision timer on a hazard-free map. Hazard avoidance
+        // must still run immediately on the next call, not wait for AI thinking.
+        cpu.think(me, foe, Maps.ALL[3], 1f / 60f, 3);
+        cpu.think(me, foe, Maps.ALL[2], 0.0001f, 3);
+        assertTrue("CPU on the safe left lip must retreat, not jump into lava",
+                cpu.move() < 0f);
+        assertTrue("the avoidance move should include an evasive jump", cpu.jump());
+    }
+
+    @Test
     public void projectileLifetimeUsesSecondsNotFrames() {
         Projectile at60 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
         Projectile at30 = new Projectile(Weapons.FIST + 4, 0, 0, 0, 0, 0);
@@ -485,6 +535,9 @@ public class SmokeTest {
         boot();
         game.profile.voice = false;
         host.announcements = 0;
+        tap(1020, 330); // Arsenal
+        tap(175, 166);  // equip Fists: normally announces the weapon name
+        assertEquals("voice-off must suppress UI announcements", 0, host.announcements);
         game.debugStartMatch(0, 0);
         assertEquals("voice-off must suppress Ready", 0, host.announcements);
     }

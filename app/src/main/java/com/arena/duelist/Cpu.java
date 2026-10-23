@@ -84,8 +84,8 @@ public final class Cpu {
 
         // Look ahead instead of noticing a hazard only after it has already
         // killed us. This check runs every frame, independently of thinkTimer.
-        boolean hazardHere = hazardDanger(me, arena, me.x);
-        boolean hazardAhead = hazardDanger(me, arena, me.x + dir * 85f);
+        boolean hazardHere = hazardDanger(me, arena, me.x, Fighter.HALF_W);
+        boolean hazardAhead = hazardDanger(me, arena, me.x + dir * 85f, 48f);
         if (hazardHere || hazardAhead) {
             attack = false;
             shield = false;
@@ -94,7 +94,10 @@ public final class Cpu {
                 move = dir;
                 jump = true;
             } else {
-                move = hazardHere ? (arena.bounds.centerX() > me.x ? 1f : -1f) : -dir;
+                // If already over a hazard, leave by its nearest edge. Aiming at
+                // the arena centre could instead carry the CPU across the whole
+                // lava pit. If merely approaching one, back away from the foe.
+                move = hazardHere ? hazardEscape(me, arena) : -dir;
                 jump = me.onGround;
             }
             return;
@@ -193,10 +196,10 @@ public final class Cpu {
     }
 
     /** True when a horizontal position leads into a hazard on this level. */
-    private boolean hazardDanger(Fighter me, Maps.Arena arena, float x) {
+    private boolean hazardDanger(Fighter me, Maps.Arena arena, float x, float margin) {
         for (int i = 0; i < arena.hazards.size(); i++) {
             Maps.Hazard h = arena.hazards.get(i);
-            boolean nearX = x > h.r.left - 48f && x < h.r.right + 48f;
+            boolean nearX = x > h.r.left - margin && x < h.r.right + margin;
             // Ignore hazards far below an upper platform, but see the pit below
             // the floor the CPU is currently walking on.
             boolean relevantY = me.y + Fighter.FEET > h.r.top - 175f
@@ -206,5 +209,20 @@ public final class Cpu {
             }
         }
         return false;
+    }
+
+    /** Direction of the nearest horizontal exit from the hazard underfoot. */
+    private float hazardEscape(Fighter me, Maps.Arena arena) {
+        for (int i = 0; i < arena.hazards.size(); i++) {
+            Maps.Hazard h = arena.hazards.get(i);
+            boolean insideX = me.x > h.r.left - Fighter.HALF_W
+                    && me.x < h.r.right + Fighter.HALF_W;
+            boolean relevantY = me.y + Fighter.FEET > h.r.top - 175f
+                    && me.y - Fighter.HEAD < h.r.bottom + 20f;
+            if (insideX && relevantY) {
+                return me.x < h.r.centerX() ? -1f : 1f;
+            }
+        }
+        return arena.bounds.centerX() > me.x ? 1f : -1f;
     }
 }

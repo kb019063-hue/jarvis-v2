@@ -1,130 +1,137 @@
 # Stick Duelist
 
-A native Android 2D stick-fighting game in the spirit of *Supreme Duelist Stickman* (Neron's Brother) — original code and art, built from scratch.
+A native Android 2D stick-fighting game inspired by Neron's Brother's *Supreme Duelist Stickman*, built with original Java code and Canvas artwork.
 
-It is a **tribute, not a port**: 12 weapons, 10 arenas and three modes out of the original's 66 weapons, 46 maps and full party/ragdoll sandbox. See [the gap analysis](docs/REVIEW.md) for an honest side-by-side.
+**Scope:** this is an independent, incomplete recreation—not a port and not yet feature-parity with the original. The current build has 12 weapons, 10 arenas and three modes. The larger content roster, 3–4 player party play, extra minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
 
-**Install:** grab the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it (Android 7.0+, allow unknown sources). Landscape, touch only, works offline.
+**Install v0.2:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
 
 <p align="center"><img src="assets/icon_512.png" width="180" alt="Stick Duelist icon"></p>
 
 ## Screenshots
 
-These are rendered by the test suite on every push (Robolectric draws real frames to PNG), so they always match the current build.
+The Robolectric suite renders real game frames to PNG on every CI push; these are not mock-ups.
 
 | | |
 |---|---|
 | ![Title](docs/screenshots/01-title.png) | ![Local duel](docs/screenshots/05-local-duel.png) |
 | ![Countdown](docs/screenshots/02-quick-fight.png) | ![K.O.](docs/screenshots/03-hit-and-hud.png) |
 | ![Arena picker](docs/screenshots/10-arena-picker.png) | ![Arsenal](docs/screenshots/11-arsenal.png) |
-| ![Lava Core](docs/screenshots/08-lava-core.png) | ![Orbital Deck](docs/screenshots/09-orbital-deck.png) |
-| ![Customize](docs/screenshots/14-customize.png) | ![Settings](docs/screenshots/13-settings.png) |
-| ![KO ragdoll](docs/screenshots/16-ragdoll-ko.png) | ![Ragdoll settled](docs/screenshots/17-ragdoll-settled.png) |
+| ![Lava Core](docs/screenshots/08-lava-core.png) | ![How to play](docs/screenshots/15-how-to-play.png) |
 | ![Knockdown](docs/screenshots/18-knockdown.png) | ![Recovered](docs/screenshots/19-recovered.png) |
-| ![Active body](docs/screenshots/21-standing-body.png) | ![Hit flop](docs/screenshots/22-hit-flop.png) |
 
-## What's in it
-
-**Fighters**
-- Arcade stick-figure combat with knockback, hit-stop, screen shake, sparks/blood/confetti
-- **Active ragdoll** — every fighter is a simulated body from the first frame, not an animation: an 11-point Verlet skeleton (12 distance constraints, 5 relaxation passes) is pulled toward the animated pose by a "muscle", and the drawing is stroked straight from the joints. At full muscle the pose is exact; a hit kicks the body and lowers the muscle, so a jab is a 28 px flinch that recovers in 0.25 s and a hammer throws the body 133 px over 0.42 s
-- **Knockdown + auto-recovery** — break an opponent's poise and the muscle switches off entirely: the body goes fully limp and drops, then stands back up on its own (fists need 4 clean hits; a hammer does it in one). A downed fighter cannot move, attack or shield, and gets 0.6 s of invulnerability on standing up
-- **Deaths use the same body** — a KO keeps the skeleton it died with (`Ragdoll.reborn`), lets it tumble, settle and fade
-- Energy shield (drains when hit, breaks into a stun), crouch, coyote-time jumps
-- Health + shield bars, round pips, floating damage numbers
-
-**Weapons (12, unlockable with coins)**
-- Melee: Fists, Sword, Spear, Dual Sabers, Hammer, Energy Blade
-- Thrown: Kunai, Bomb (splash), Boomerang (returns for a second hit)
-- Projectile: Bow, Wand (homing bolts), Pistol
-- Weapons drop from the sky mid-match — walk over one to grab it. Ammo is finite.
-
-**Arenas (10)**
-- Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night, Chaos Pit
-- Water / lava / spike hazards, pits, floating platforms, themed skies and parallax backdrops
-
-**Modes**
-- **Quick Fight** — best-of-3 vs CPU (4 difficulties)
-- **Local Duel** — 2 players on one device, mirrored joystick + button clusters
-- **Survival** — endless waves, tougher enemies, score tracking
-
-**Meta**
-- Coins for wins and takedowns, weapon shop/arsenal, body colours, hair styles
-- House rules from the original: gravity on/off, instant KO on hazards, energy shield on/off
-- With the energy shield off, DEF makes your fighter bend down (like the original)
-- Voice announcer ("Three… Two… One… Fight!", "K.O.", "Victory") + synthesized sound effects
-- Everything persists in `SharedPreferences`
+More frames, including every arena and ragdoll states, are in [`docs/screenshots`](docs/screenshots).
 
 ## Controls
 
-| | Move | Attack | Jump | Shield |
-|---|---|---|---|---|
-| 1P | left thumbstick (whole left half) | ATK (right) | JMP | DEF |
-| 2P left | left stick | ATK | JMP | DEF |
-| 2P right | right stick | ATK | JMP | DEF |
+There are **no separate attack, jump or defend buttons**. Each fighter uses one stick:
 
-Hold ATK to keep swinging on cooldown. Push the stick up or down while throwing to aim.
-DEF blocks with any weapon; with the energy-shield rule switched off it crouches instead.
+| Input | Action |
+|---|---|
+| Hold a direction | Move, aim the visible weapon and basic-attack automatically on cooldown |
+| Push up | Jump once per upward push; return toward neutral before jumping again |
+| Hold down | Energy shield, or crouch when the energy-shield rule is off |
+| Release a held direction while the outer ring is gold | Use the equipped weapon's skill in that direction |
+| Pause icon | Pause, resume, restart, change arena or quit |
 
-## How close is it to the original?
+- **1P:** touch anywhere on the left half; the stick floats to the thumb.
+- **Local 2P:** player 1 uses the lower-left stick and player 2 the lower-right stick, with independent pointer IDs.
+- The outer ring refills after a skill. A release with insufficient stick deflection does not spend the skill.
 
-Honest scorecard against *Supreme Duelist Stickman* (see [docs/REVIEW.md](docs/REVIEW.md)):
+## What's in it
 
-| | Original | This build |
-|---|---|---|
-| Core loop (1v1 stick duel, weapon drops, hazards) | ✅ | ✅ |
-| House rules (gravity / instant KO / energy shield) | ✅ | ✅ |
-| Local 2P on one device | ✅ | ✅ |
-| Ragdoll death / K.O. tumble | ✅ | ✅ |
-| Knock-down + self recovery | ✅ | ✅ |
-| Ragdoll physics | ✅ every hit | ✅ the standing fighter is drawn from a simulated body: every hit flops it, heavy hits knock it down |
-| 3–4 player party mode | ✅ | ❌ |
-| Football, boss tournament, zombie mode | ✅ | ❌ |
-| Map editor | ✅ | ❌ |
-| Content volume | 66 weapons / 46 maps | 12 weapons / 10 maps |
-| Online play | ❌ (local only) | ❌ |
+### Combat and physics
 
-So: the *feel* of the duel and the rule set are recognisably Supreme Duelist, the *sandbox* is not.
+- Active 11-joint Verlet bodies for standing fighters, hit reactions, knockdowns and K.O.s—not only death animations.
+- Poise breaks, limp knockdowns, automatic recovery and brief recovery invulnerability.
+- Melee contact follows the rendered weapon segment and tested body joints, including upward attacks; it is not a full continuous/swept physics simulation.
+- Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
+- Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
+- CPU spacing, punishing, predictive hazard avoidance and occasional weapon-skill use across four difficulties.
+
+### Weapons and release skills (12)
+
+| Weapon | Release skill |
+|---|---|
+| Fists | Rushing power jab |
+| Sword | Directional dash slash |
+| Spear | Long lunge |
+| Dual Sabers | All-around spin/shockwave |
+| Kunai | Three-blade fan |
+| Hammer | Heavy shockwave |
+| Bow | Triple-arrow volley |
+| Wand | Five seeking bolts |
+| Bomb | Cluster throw |
+| Boomerang | Twin returning blades |
+| Pistol | Three-bullet spread |
+| Energy Blade | Dash plus plasma wave |
+
+Basic ranged attacks consume their displayed ammo. Skills use their own cooldown. Weapons also drop during non-Survival matches and can be collected by walking over them.
+
+### Arenas (10)
+
+Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night and Chaos Pit. Hazards include water, lava, spikes and pits, with floating platforms and themed backdrops.
+
+### Modes
+
+- **Quick Fight:** first to two rounds against the CPU; a double K.O. replays without awarding a point.
+- **Local Duel:** two players on one device with the same one-stick control scheme.
+- **Survival:** successive enemies, wave rewards, healing and increasing difficulty. A mutual K.O. is a player defeat, not a free wave.
+
+### Meta and accessibility
+
+- Coins, two-tap weapon purchases, persistent starter selection, body colours and hair styles.
+- Gravity, instant-KO hazard and energy-shield house rules.
+- Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
+- Persistent records and settings through `SharedPreferences`.
+
+## Validation
+
+`SmokeTest` currently contains **23 authored Robolectric tests**. Coverage includes real touch release, every weapon skill, directional melee contact, double-K.O. and Survival outcomes, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, CPU hazard avoidance, menu transitions and rendering every arena/weapon combination.
+
+Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
 ## Build
 
-Requires JDK 17 + the Android SDK (compileSdk 34).
+Requires JDK 17 and the Android SDK (compileSdk 34):
 
 ```bash
-./gradlew assembleDebug          # or: gradle assembleDebug
-./gradlew testDebugUnitTest      # Robolectric smoke tests
+gradle assembleDebug
+gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed — the CI workflow installs Gradle 8.7 and the SDK itself, so every push produces a signed debug APK plus a GitHub release with a downloadable `stick-duelist-<n>.apk`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 2`, `versionName 0.2`.
 
 ## Structure
 
-```
+```text
 app/src/main/java/com/arena/duelist/
   MainActivity.java   activity, immersive fullscreen, TTS announcer, haptics
-  GameView.java       SurfaceView + fixed-timestep render loop, multi-touch routing
-  Game.java           screens, match flow, combat resolution, HUD, menus, touch controls
-  Fighter.java        movement, attacks, shield, stick-figure rendering
-  Ragdoll.java        Verlet ragdoll: 11 joints, distance constraints, platform collision
-  Weapons.java        12 weapon definitions
-  Projectile.java     kunai/arrow/bolt/bomb/boomerang behaviour
-  Maps.java           10 arenas: platforms, hazards, themes
-  Cpu.java            spacing/punish AI with 4 difficulty levels
-  Particles.java      sparks, blood, dust, shockwaves, confetti, floating text
-  Painter.java        canvas helpers, gradients, text
-  SoundFx.java        on-device WAV synthesis -> SoundPool
-  Profile.java        coins, unlocks, settings, records
-app/src/test/java/com/arena/duelist/SmokeTest.java   full-match rendering tests
+  GameView.java       SurfaceView, fixed-step loop, multi-touch routing
+  Game.java           screens, match flow, combat, HUD, menus, one-stick input
+  Fighter.java        movement, attacks, weapon pose, shield and fighter state
+  Ragdoll.java        11-joint Verlet body, constraints and platform collision
+  Weapons.java        12 weapon definitions and skill descriptions
+  Projectile.java     thrown/projectile state and second-based lifetime
+  Maps.java           10 arenas, platforms, hazards and themes
+  Cpu.java            spacing, punishes, weapon use and hazard avoidance
+  Particles.java      combat and movement effects
+  Painter.java        Canvas drawing helpers
+  SoundFx.java        on-device synthesized sound effects
+  Profile.java        coins, unlocks, settings and records
+app/src/test/java/com/arena/duelist/SmokeTest.java
 ```
 
-## Roadmap
+## Remaining parity work
 
-- [ ] Wi-Fi LAN link (host/join over the same network, NsdManager discovery)
+- [ ] Original-scale weapon and arena roster
+- [ ] 3–4 player local party matches
+- [ ] Football, boss tournament and other original modes
 - [ ] Map editor
-- [ ] Football mini-game, boss tournament
-- [ ] Weapon skins and per-weapon upgrades
-- [ ] Online play
+- [ ] Wi-Fi/LAN multiplayer
+- [ ] Physical-device gameplay/performance validation
+- [ ] Production signing, store assets and release hardening
 
 ---
 
-Not affiliated with Neron's Brother. Fan-made, original code and assets — no assets from the original game are used.
+Not affiliated with Neron's Brother. No assets from the original game are used.
