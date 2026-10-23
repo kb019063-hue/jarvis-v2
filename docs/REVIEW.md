@@ -17,7 +17,7 @@ every hit, is absent, and most of its content and party modes are missing.
 |---|---|
 | Native Android app (Java, no engine, no external assets) | `app/src/main/java/com/arena/duelist/*.java`, ~4.4k lines |
 | Builds and tests green | GitHub Actions on this branch — `assembleDebug` + `testDebugUnitTest` success |
-| Tests | 12 Robolectric tests incl. per-arena ragdoll stability, knockdown → recovery, poise, input-lock and the buy-confirm flow |
+| Tests | 14 Robolectric tests incl. per-arena ragdoll stability, standing pose tracking, hit flop → recovery, knockdown → recovery, poise, input-lock and the buy-confirm flow |
 | Installable APK | Releases `build-19`–`build-21` → `stick-duelist-<n>.apk`, `minSdk 24` (Android 7.0+) |
 | Screenshots are real frames | `SmokeTest` renders with Robolectric NATIVE graphics to PNG |
 | 10 arenas, 12 weapons, 3 modes, coins/unlocks/settings | `Maps.java`, `Weapons.java`, `Game.java`, `Profile.java` |
