@@ -289,8 +289,9 @@ public class SmokeTest {
         boot();
         game.debugStartMatch(0, 0);
         game.debugStartFight();
-        step(40);
         Fighter cpu = game.debugFighter(1);
+        cpu.cpu = false; // isolate muscle recovery from platform-navigation input
+        step(40);
 
         // a light jab must visibly disturb the body...
         cpu.damage(8f, 250f, -90f, false);
