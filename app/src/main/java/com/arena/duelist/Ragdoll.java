@@ -44,6 +44,8 @@ public final class Ragdoll {
 
     public final float[] x = new float[N];
     public final float[] y = new float[N];
+    /** Reused by the hair drawing: a corpse redrew its hair every frame. */
+    private final Path hairPath = new Path();
     private final float[] px = new float[N];
     private final float[] py = new float[N];
     private final float[] rest = new float[BONES.length];
@@ -377,7 +379,8 @@ public final class Ragdoll {
         int c = Painter.withAlpha(accent, (int) (255f * alpha));
         float r = Fighter.HEAD_RADIUS;
         if (hair == 1) {
-            Path p = new Path();
+            Path p = hairPath;
+            p.reset();
             p.moveTo(hx - 9f, hy - r + 2f);
             p.lineTo(hx - 4f, hy - r - 7f);
             p.lineTo(hx + 1f, hy - r - 1f);

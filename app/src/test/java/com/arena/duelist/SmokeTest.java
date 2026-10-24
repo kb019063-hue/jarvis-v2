@@ -227,6 +227,21 @@ public class SmokeTest {
     }
 
     @Test
+    public void repeatedDrawsKeepTheMenuHitboxesWorking() {
+        // Draw used to allocate a Painter, its three Paints, a Path per hair and
+        // blade, and a Btn + RectF for every menu button, every frame. Those are
+        // pooled now; this checks the pool did not break hit-testing.
+        boot();
+        for (int i = 0; i < 40; i++) {
+            game.draw(canvas);
+        }
+        tap(1020, 154);                       // QUICK FIGHT
+        assertEquals("a button must still be live after repeated draws", 1, game.debugScreen());
+        tap(210, 166);                        // first arena
+        assertEquals("and must still start the match", 5, game.debugScreen());
+    }
+
+    @Test
     public void androidBackClearsStaleMenuHitboxes() {
         boot();
         tap(1020, 390); // Arsenal

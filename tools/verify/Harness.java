@@ -152,6 +152,19 @@ public final class Harness {
             p.abilityT = 0f;
             p.spawnT = 0f;
             p.hurtT = 0f;
+            // Measure from the middle of the arena. The dash starts wherever the
+            // spawn put the fighter, and a spawn near a wall truncated it: this
+            // check read anywhere from 38 px to 251 px across runs, which made the
+            // battery look red at random.
+            p.x = 800f;
+            p.vx = 0f;
+            p.vy = 0f;
+            // Park and freeze the opponent: this check read anywhere from 38 px
+            // to 311 px because the dash sometimes ran into a fighter that had
+            // wandered into the middle of the arena.
+            Fighter cpu = fighters(g)[1];
+            cpu.x = 1450f;
+            cpu.spawnT = 5f;
             float x0 = p.x;
             // simulate the stick release that triggers the ability
             boolean used = (Boolean) invoke(g, "useAbility",

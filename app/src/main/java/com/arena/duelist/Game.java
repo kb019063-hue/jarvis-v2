@@ -102,7 +102,13 @@ public final class Game {
     private final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
     /** Previous frame's DOWN input, so a pickup needs a fresh press. */
     private final boolean[] downPrev = new boolean[2];
+    /**
+     * Live menu hitboxes for this frame. The list is a pool: every menu used to
+     * allocate a Btn (and its RectF) for every button on every frame, which is
+     * ten objects a frame on the title screen alone.
+     */
     private final ArrayList<Btn> uiBtns = new ArrayList<Btn>();
+    private int uiBtnCount;
     private final Cpu cpu = new Cpu();
     private final Football football = new Football();
 
@@ -168,6 +174,10 @@ public final class Game {
     private final Stick stickA = new Stick();
     private final Stick stickB = new Stick();
     private final RectF pauseRect = new RectF();
+    // Draw scratch. Every one of these used to be allocated inside a per-frame
+    // draw method; see Draw.java in tools/verify for the before/after count.
+    private final RectF drawRect = new RectF();
+    private final Path drawPath = new Path();
     private final Fighter previewFighter = new Fighter(0, "PREVIEW", 0, 0, false);
 
     public Game(Context ctx, Host host) {
@@ -225,7 +235,7 @@ public final class Game {
                 paused = true;
                 // drop last frame's menu hitboxes so an early tap cannot hit a
                 // stale button from the screen we came from
-                uiBtns.clear();
+                uiBtnCount = 0;
                 releaseControls();
                 return;
             }
@@ -294,7 +304,7 @@ public final class Game {
     }
 
     private void handleMenuTap(float x, float y) {
-        for (int i = uiBtns.size() - 1; i >= 0; i--) {
+        for (int i = uiBtnCount - 1; i >= 0; i--) {
             Btn b = uiBtns.get(i);
             if (b.r.contains(x, y)) {
                 act(b.action);
@@ -306,7 +316,7 @@ public final class Game {
     private void act(int action) {
         sfx(SoundFx.CLICK);
         // No screen transition may leave active hitboxes from the old screen.
-        uiBtns.clear();
+        uiBtnCount = 0;
         // "tap again to confirm" states: any other tap cancels them, which keeps
         // a stale confirmation from spending coins or wiping progress later
         boolean keepReset = confirmReset && action == A_RESET;
@@ -481,7 +491,7 @@ public final class Game {
         releaseControls();
         if (screen == S_PLAY) {
             paused = true;
-            uiBtns.clear();
+            uiBtnCount = 0;
         }
     }
 
@@ -493,7 +503,7 @@ public final class Game {
             } else {
                 paused = true;
             }
-            uiBtns.clear();
+            uiBtnCount = 0;
             releaseControls();
             return true;
         }
@@ -501,7 +511,7 @@ public final class Game {
             screen = S_TITLE;
             // Back is a screen transition too: do not leave the old menu's
             // buttons tappable until the next draw rebuilds the title hitboxes.
-            uiBtns.clear();
+            uiBtnCount = 0;
             releaseControls();
             return true;
         }
@@ -1677,7 +1687,7 @@ public final class Game {
     private void finishMatch() {
         screen = S_RESULT;
         paused = false;
-        uiBtns.clear();
+        uiBtnCount = 0;
     }
 
     private void updateWorldFx(float dt) {
@@ -1850,8 +1860,16 @@ public final class Game {
 
     // ------------------------------------------------------------------ draw
 
+    /** One painter for the life of the game: it owns three Paints. */
+    private Painter painter;
+
     public synchronized void draw(Canvas canvas) {
-        Painter g = new Painter(canvas);
+        if (painter == null) {
+            painter = new Painter(canvas);
+        } else {
+            painter.beginFrame(canvas);
+        }
+        Painter g = painter;
         canvas.drawColor(0xFF0B0F17);
 
         if (screen == S_PLAY || screen == S_RESULT) {
@@ -1869,7 +1887,7 @@ public final class Game {
         }
 
         drawMenuBackground(g, screen);
-        uiBtns.clear();
+        uiBtnCount = 0;
         if (screen == S_TITLE) {
             drawTitle(g);
         } else if (screen == S_MAPS) {
@@ -1979,7 +1997,8 @@ public final class Game {
             for (int i = 0; i < 7; i++) {
                 float x = i * 230f - 120f;
                 float hgt = 190 + ((i * 53) % 140);
-                Path hill = new Path();
+                Path hill = drawPath;
+                hill.reset();
                 hill.moveTo(x, baseY);
                 hill.lineTo(x + 150, baseY - hgt);
                 hill.lineTo(x + 320, baseY);
@@ -2013,7 +2032,8 @@ public final class Game {
                 g.rect(hr.left, hr.top, hr.width(), hr.height(), 0x44140A20);
                 for (int k = 0; k < 20; k++) {
                     float wx = hr.left + 16 + k * (hr.width() / 20f);
-                    Path spike = new Path();
+                    Path spike = drawPath;
+                    spike.reset();
                     spike.moveTo(wx - 9, hr.top + 26);
                     spike.lineTo(wx, hr.top);
                     spike.lineTo(wx + 9, hr.top + 26);
@@ -2131,8 +2151,8 @@ public final class Game {
         g.line.setColor(ready ? 0xFFFFD166 : Painter.withAlpha(color, 150));
         g.line.setStrokeWidth(4f);
         float ring = s.radius + 8f;
-        g.c.drawArc(new RectF(s.baseX - ring, s.baseY - ring,
-                s.baseX + ring, s.baseY + ring), -90f, 360f * charge, false, g.line);
+        drawRect.set(s.baseX - ring, s.baseY - ring, s.baseX + ring, s.baseY + ring);
+        g.c.drawArc(drawRect, -90f, 360f * charge, false, g.line);
         g.size(10f);
         float labelY = s.baseY + s.radius + 25f;
         if (labelY > viewH - 5f) {
@@ -2295,7 +2315,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.7", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.8", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2355,10 +2375,7 @@ public final class Game {
         g.rrectStroke(x, y, w, h, 12, 2f, Painter.withAlpha(tint, 180));
         g.size(Math.min(22f, h * 0.42f));
         g.textShadowCenter(label, x + w / 2, y + h / 2 + 7, 0xFFFFFFFF, 1.5f);
-        Btn b = new Btn();
-        b.r.set(x, y, x + w, y + h);
-        b.action = action;
-        uiBtns.add(b);
+        addBtn(x, y, w, h, action);
     }
 
     private void header(Painter g, String title) {
@@ -2554,7 +2571,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.3.7 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.8 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -2604,7 +2621,7 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         g.rect(0, 0, viewW, viewH, 0xCC06080F);
-        uiBtns.clear();
+        uiBtnCount = 0;
         float pw = 340;
         float px = (viewW - pw) / 2;
         float py = 90;
@@ -2626,7 +2643,7 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         g.rect(0, 0, viewW, viewH, 0xB306080F);
-        uiBtns.clear();
+        uiBtnCount = 0;
         float pw = 460;
         float ph = 300;
         float px = (viewW - pw) / 2;
@@ -2654,10 +2671,16 @@ public final class Game {
     }
 
     private void addBtn(float x, float y, float w, float h, int action) {
-        Btn b = new Btn();
+        Btn b;
+        if (uiBtnCount < uiBtns.size()) {
+            b = uiBtns.get(uiBtnCount);
+        } else {
+            b = new Btn();
+            uiBtns.add(b);
+        }
         b.r.set(x, y, x + w, y + h);
         b.action = action;
-        uiBtns.add(b);
+        uiBtnCount++;
     }
 
     /** Drops every held pointer and every queued gameplay action. */
@@ -2818,8 +2841,10 @@ public final class Game {
 
     // --------------------------------------------------------------- helpers
 
+    /** Reused by the projectile drawing; callers draw it immediately. */
     private Path triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
-        Path p = new Path();
+        Path p = drawPath;
+        p.reset();
         p.moveTo(x1, y1);
         p.lineTo(x2, y2);
         p.lineTo(x3, y3);
@@ -2828,7 +2853,8 @@ public final class Game {
     }
 
     private Path diamond(float x, float y, float r) {
-        Path p = new Path();
+        Path p = drawPath;
+        p.reset();
         p.moveTo(x, y - r);
         p.lineTo(x + r, y);
         p.lineTo(x, y + r);

@@ -60,7 +60,7 @@ its author in a way that could be read as closer than it is.
   explosives, a homing wand and a returning boomerang.
 - 10 arenas with hazards (lava, spikes, void), instant-KO rules and a football
   mode with its own physics.
-- 80 authored automated tests and real rendered screenshots in CI.
+- 81 authored automated tests and real rendered screenshots in CI.
 
 ## What is missing relative to "an exact game"
 
@@ -102,13 +102,14 @@ isolated physics probes). Full write-up: `IMPLEMENTATION-0.3.2.md`.
 | 20 | High | A sword broke a full shield in 4 hits (a bomb in 2) and the shield never came back | 1.8 shield points per damage; 10 → 10 over 5 s idle, 0 → 0 over 15 s | **Fixed** in 0.3.7 (6 hits, 22/s recharge after 2.5 s) |
 | 21 | Medium | The guard-break stun never applied: `stun(0.7f)` was overwritten by `hurtT = 0.22f` in the same call | measured hurtT after a break was always 0.22 s | **Fixed** in 0.3.7 (`Math.max`, 0.45 s) |
 | 22 | Medium | The CPU never raises its shield (`shield = false` on every Cpu path) | 0 shield frames in 30 s against an idle player | Open — difficulty pass (aggression is frozen by request) |
+| 23 | Medium | The draw path allocated 15-47 objects every frame | counters in the harness graphics stubs: 13/frame title, 15/frame duel, 47/frame on a spiked map | **Fixed** in 0.3.8 (0.00/frame) |
 | 9 | Low | No physical-device testing of frame pacing or touch feel | no hardware in the writing environment | Open |
 
 ## How to check this yourself
 
 - Install `docs/screenshots/*.png` are rendered by the test suite each CI run,
   so they reflect the real code.
-- Run `gradle testDebugUnitTest`; the 80 methods exercise combat, CPU
+- Run `gradle testDebugUnitTest`; the 81 methods exercise combat, CPU
   navigation, camera, football, bosses and the input model.
 - The pre-fix numbers in the table above came from `tools/verify/` — a
   headless harness that compiles the game classes and runs real matches with

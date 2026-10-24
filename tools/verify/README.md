@@ -22,6 +22,7 @@ They are kept here as reproducible evidence, not as part of the app.
 | `Audit2.java` | Ammo exhaustion, silent weapon-pickup swap, shield break and regen |
 | `Audit3.java` | Where weapon drops land, football stalemate risk |
 | `Balance.java` | Per-weapon time-to-kill against an idle **and** a moving target, 9 seeds each |
+| `Draw.java` | Objects allocated per drawn frame (Path/RectF/Paint), per screen and arena, plus a menu-hitbox regression check |
 | `Shield.java` | Hits to break the shield per weapon, recharge timing, and what the shield is worth against a sword CPU |
 | `ShieldTests.java` | Headless mirror of the four shield tests added to `PlayabilityTest` in 0.3.7 |
 | `Clock.java` | Does every mode terminate? Football and duel, idle and retreating players |

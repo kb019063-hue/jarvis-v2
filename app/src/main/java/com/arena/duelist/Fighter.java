@@ -84,6 +84,14 @@ public final class Fighter {
     public boolean jumpQueued, attackQueued, shieldHeld, crouch;
     public boolean shieldOn;
 
+    // Drawing scratch: a frame redrew a blade, hair and up to two arcs, and each
+    // of those allocated a fresh Path/RectF/Paint. At 60 Hz that was ~840
+    // objects a second of pure garbage. These are reused instead.
+    private final Path scratchPath = new Path();
+    private final RectF scratchRect = new RectF();
+    private final android.graphics.Paint scratchArc = new android.graphics.Paint(
+            android.graphics.Paint.ANTI_ALIAS_FLAG);
+
     public float hurtT;
     public float flashT;
     public float spawnT = 1f;
@@ -1059,7 +1067,8 @@ public final class Fighter {
         }
         int c = accent;
         if (hair == 1) {
-            Path p = new Path();
+            Path p = scratchPath;
+            p.reset();
             p.moveTo(hx - 8f, hy - 5f);
             p.lineTo(hx - 5f, hy - HEAD_RADIUS - 5f);
             p.lineTo(hx, hy - HEAD_RADIUS - 1f);
@@ -1131,8 +1140,8 @@ public final class Fighter {
                 g.rrect(d.reach - 13f, -7f, 12f, 14f, 2f, c);
                 break;
             case Weapons.BOW:
-                g.c.drawArc(new RectF(-12f, -18f, 13f, 18f), -74f, 148f,
-                        false, arcPaint(c, 2.6f));
+                scratchRect.set(-12f, -18f, 13f, 18f);
+                g.c.drawArc(scratchRect, -74f, 148f, false, arcPaint(c, 2.6f));
                 g.stroke(-5f, 0f, 17f, 0f, 1.4f, fadeColor(0xFFE8E8E8, opacity));
                 break;
             case Weapons.WAND:
@@ -1147,8 +1156,8 @@ public final class Fighter {
                 break;
             case Weapons.BOOMERANG:
                 g.stroke(-5f, 0f, 20f, 0f, 3.2f, fadeColor(0xFF8A6B3A, opacity));
-                g.c.drawArc(new RectF(12f, -13f, 39f, 13f), -62f, 124f,
-                        false, arcPaint(c, 3.2f));
+                scratchRect.set(12f, -13f, 39f, 13f);
+                g.c.drawArc(scratchRect, -62f, 124f, false, arcPaint(c, 3.2f));
                 break;
             case Weapons.PISTOL:
                 g.rrect(-3f, -4f, 24f, 8f, 2f, fadeColor(0xFF4A4A55, opacity));
@@ -1176,7 +1185,8 @@ public final class Fighter {
     private void drawBlade(Painter g, float start, float length, float halfWidth, int color) {
         float end = start + length;
         float shoulder = Math.max(start, end - Math.min(8f, length * 0.22f));
-        Path blade = new Path();
+        Path blade = scratchPath;
+        blade.reset();
         blade.moveTo(start, -halfWidth * 0.55f);
         blade.lineTo(shoulder, -halfWidth);
         blade.lineTo(end, 0f);
@@ -1187,11 +1197,10 @@ public final class Fighter {
     }
 
     private android.graphics.Paint arcPaint(int c, float w) {
-        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        p.setStyle(android.graphics.Paint.Style.STROKE);
-        p.setStrokeWidth(w);
-        p.setColor(c);
-        p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-        return p;
+        scratchArc.setStyle(android.graphics.Paint.Style.STROKE);
+        scratchArc.setStrokeWidth(w);
+        scratchArc.setColor(c);
+        scratchArc.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+        return scratchArc;
     }
 }
