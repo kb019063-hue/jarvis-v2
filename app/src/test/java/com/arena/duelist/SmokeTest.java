@@ -531,11 +531,13 @@ public class SmokeTest {
         Fighter p = game.debugFighter(0);
         Fighter cpu = game.debugFighter(1);
         cpu.cpu = false; // keep the AI from claiming the drop first
-        cpu.reset(120, 590);
-        p.reset(620, 590);
+        // Stand on the arena's own floor: 590 was written for the 640-top maps
+        // and leaves both fighters in the air on the rebuilt 800-top arenas.
+        float floor = Maps.ALL[0].platforms.get(0).r.top;
+        cpu.reset(120, floor - Fighter.FEET);
+        p.reset(620, floor - Fighter.FEET);
         p.spawnT = cpu.spawnT = 0f;
         p.giveWeapon(Weapons.SWORD);
-        float floor = Maps.ALL[0].platforms.get(0).r.top;
         game.debugAddPickup(Weapons.PISTOL, 620f, floor - 12f);
         assertEquals("the drop should exist", 1, game.debugPickupCount());
 
