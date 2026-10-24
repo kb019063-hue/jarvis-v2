@@ -206,10 +206,11 @@ public final class Fighter {
 
     public void jump() {
         if (onGround || coyote > 0f) {
-            // High enough to reach the game's 170 px platform rises. The old
-            // -730 impulse topped out below them and made the intended routes
-            // unusable, especially on Rooftop Dusk.
-            vy = -850f;
+            // High enough to reach the game's 170 px platform rises but not so
+            // strong that landings are impossible to control. The old -850
+            // impulse combined with 1900 gravity made the fighter feel like a
+            // rocket; -720 keeps the routes reachable while being predictable.
+            vy = -720f;
             onGround = false;
             crouch = false;
             coyote = 0f;
@@ -217,10 +218,16 @@ public final class Fighter {
     }
 
     public void damage(float amount, float kx, float ky, boolean ignoreShield) {
-        if (dead || iframes > 0f) {
-            return;
+        if (dead || iframes > 0f || hurtT > 0f) {
+            return; // hitstun immunity: cannot be comboed during recoil
         }
         float dmg = amount;
+        // A downed fighter is vulnerable but takes reduced damage while
+        // recovering - they cannot defend themselves, so don't let a single
+        // knockdown turn into an instant kill.
+        if (down) {
+            dmg *= 0.5f;
+        }
         if (!ignoreShield && shieldOn && shield > 0) {
             shield -= dmg * 1.8f;
             dmg *= 0.15f;
@@ -475,8 +482,8 @@ public final class Fighter {
         if (attacking) {
             target *= 0.45f;
         }
-        float accel = onGround ? 3400f : 1900f;
-        float maxSpeed = 360f;
+        float accel = onGround ? 2600f : 1500f;
+        float maxSpeed = 300f;
         float desired = target * maxSpeed;
         if (vx < desired) {
             vx = Math.min(desired, vx + accel * dt);
@@ -499,9 +506,9 @@ public final class Fighter {
 
         // Gravity (toggleable "space" rule)
         if (gravityOn) {
-            vy += 1900f * dt;
-            if (vy > 1500f) {
-                vy = 1500f;
+            vy += 1600f * dt;
+            if (vy > 1300f) {
+                vy = 1300f;
             }
         } else {
             // Gravity OFF is zero-G: no downward pull while standing, but air

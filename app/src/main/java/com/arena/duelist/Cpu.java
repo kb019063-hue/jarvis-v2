@@ -168,8 +168,10 @@ public final class Cpu {
 
     private boolean requestAttack(boolean ready, int level) {
         if (!ready || attackTimer > 0f) return false;
-        // Difficulty changes cadence without ever creating an impossible range.
-        attackTimer = 0.12f + (3 - Math.max(0, Math.min(3, level))) * 0.12f
+        // Difficulty changes cadence. The floor is raised so even at Insane
+        // the CPU cannot spam faster than the player's own attack cooldown -
+        // that used to create an unavoidable stunlock.
+        attackTimer = 0.22f + (3 - Math.max(0, Math.min(3, level))) * 0.12f
                 + rnd.nextFloat() * 0.08f;
         return true;
     }
