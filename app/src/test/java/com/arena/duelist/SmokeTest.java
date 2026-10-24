@@ -411,8 +411,12 @@ public class SmokeTest {
     @Test
     public void crouchKeepsFeetOnThePlatform() {
         Maps.Arena arena = Maps.ALL[3];
-        Fighter f = new Fighter(0, "TEST", 500f, 590f, false);
-        f.reset(500f, 590f);
+        // Stand on the arena's own floor: the old hard-coded 590 was written
+        // for the 640-top maps and left the fighter falling once the arenas
+        // were rebuilt in 0.3.9.
+        float floorY = arena.platforms.get(0).r.top - Fighter.FEET;
+        Fighter f = new Fighter(0, "TEST", 500f, floorY, false);
+        f.reset(500f, floorY);
         f.spawnT = 0f;
         f.shieldHeld = true;
         f.update(1f / 60f, arena, true, false);
@@ -848,16 +852,20 @@ public class SmokeTest {
 
     @Test
     public void fighterCanJumpThroughAndLandOnThinPlatform() {
-        Fighter f = new Fighter(1, "CPU", 1020f, 610f, true);
+        // Rooftop Dusk in 0.3.9: the 660 ledge under the fighter runs
+        // 940..1260, and the thin top ledge sits at 520 spanning 1020..1180.
+        // Start on the lower ledge and jump straight up through the top one.
+        Fighter f = new Fighter(1, "CPU", 1100f, 630f, true);
         f.spawnT = 0f;
         f.onGround = true;
         f.jump();
         for (int i = 0; i < 120; i++) {
             f.update(1f / 60f, Maps.ALL[0], true, true);
         }
-        assertTrue("fighter should land on the ledge above the first-map spawn", f.onGround);
-        assertEquals("Rooftop Dusk upper ledge must be physically reachable",
-                440f, f.y, 2f);
+        assertTrue("fighter should land on the thin ledge above the lower one", f.onGround);
+        // f.y is the foot position: standing on a 520-top ledge means y = 490.
+        assertEquals("Rooftop Dusk top ledge must be physically reachable",
+                490f, f.y, 2f);
     }
 
     @Test

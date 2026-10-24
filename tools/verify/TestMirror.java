@@ -29,6 +29,27 @@ public final class TestMirror {
         }
         return best;
     }
+    /** Mirrors SmokeTest.crouchKeepsFeetOnThePlatform and fighterCanJumpThroughAndLandOnThinPlatform. */
+    static void mapGeometryTests() {
+        Maps.Arena temple = Maps.ALL[3];
+        float floorY = temple.platforms.get(0).r.top - Fighter.FEET;
+        Fighter c = new Fighter(0, "TEST", 500f, floorY, false);
+        c.reset(500f, floorY);
+        c.spawnT = 0f;
+        c.shieldHeld = true;
+        c.update(1f / 60f, temple, true, false);
+        check("crouch holds the feet on the platform", c.body.y[Ragdoll.FOOT_L] >= c.y + Fighter.FEET - 2f
+                && c.crouch, "footL=" + c.body.y[Ragdoll.FOOT_L] + " feet=" + (c.y + Fighter.FEET));
+
+        Fighter j = new Fighter(1, "CPU", 1100f, 630f, true);
+        j.spawnT = 0f;
+        j.onGround = true;
+        j.jump();
+        for (int i = 0; i < 120; i++) j.update(1f / 60f, Maps.ALL[0], true, true);
+        check("jump lands on the thin top ledge", j.onGround && Math.abs(j.y - 490f) < 2f,
+                "onGround=" + j.onGround + " y=" + j.y);
+    }
+
     static public void main(String[] a) {
         // 1. CPU descends from a side ledge
         for (int map : new int[]{0,2,6,9}) for (long seed : new long[]{7,42}) {
@@ -75,6 +96,7 @@ public final class TestMirror {
             f.update(1f/60f, Maps.ALL[0], false, false);
             check("gravity-off frame is gentle", f.vy>0f && f.vy<12f, "vy="+f.vy);
         }
+        mapGeometryTests();
         System.out.println("checks="+checks+" failures="+fails);
     }
     static Object invoke(Object o, String n, Class<?>[] t, Object... a) {
