@@ -351,7 +351,10 @@ public final class Fighter {
         Weapons.Def d = Weapons.DEFS[weapon];
         attacking = true;
         firedThisSwing = false;
-        attackDur = Math.max(0.18f, d.cooldown * 0.75f);
+        // A swing must be readable. The old 0.18 s floor made the fastest
+        // weapons land their hit window three frames after the input, which is
+        // why close combat felt instant and unreactable.
+        attackDur = Math.max(0.30f, d.cooldown * 0.75f);
         attackT = attackDur;
         cooldown = d.cooldown;
         hitThisSwing = false;
@@ -375,7 +378,7 @@ public final class Fighter {
 
     public boolean meleeActive() {
         return attacking && Weapons.DEFS[weapon].type == Weapons.MELEE
-                && attackT < attackDur * 0.75f && attackT > attackDur * 0.25f;
+                && attackT < attackDur * 0.70f && attackT > attackDur * 0.30f;
     }
 
     /** Current physical weapon tip, used by the melee contact test. */
@@ -509,8 +512,11 @@ public final class Fighter {
         if (attacking) {
             target *= 0.45f;
         }
-        float accel = onGround ? 3400f : 1900f;
-        float maxSpeed = 360f;
+        // Trimming the top speed and the ground acceleration takes the
+        // twitchiness out of close combat without touching the jump: platform
+        // reach depends on the jump impulse, not on walking speed.
+        float accel = onGround ? 2700f : 1600f;
+        float maxSpeed = 320f;
         float desired = target * maxSpeed;
         // A hit's knockback (and a release-skill dash) sets vx directly. Braking
         // those at the walk acceleration erased a 250 px/s hit in about 11 px,

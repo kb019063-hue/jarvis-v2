@@ -450,6 +450,56 @@ public class SmokeTest {
     }
 
     @Test
+    public void attackTempoStaysHuman() {
+        // Holding the one stick auto-attacks, so the weapon cooldown is the
+        // game's real tempo. 0.3.1 fired the light weapons 3.5-4.6 times a
+        // second and the whole game read as "too fast".
+        Maps.Arena arena = Maps.ALL[0];
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            Fighter f = new Fighter(0, "P1", 300f, 610f, false);
+            f.spawnT = 0f;
+            f.giveWeapon(w);
+            int swings = 0;
+            boolean was = false;
+            for (int i = 0; i < 600; i++) {
+                f.input(0f, 1f, 0f, false, true, false);
+                f.update(1f / 60f, arena, true, false);
+                if (f.attacking && !was) swings++;
+                was = f.attacking;
+            }
+            assertTrue(Weapons.name(w) + " attacks more than three times per second ("
+                    + swings + " swings in ten seconds)", swings <= 30);
+            assertTrue(Weapons.name(w) + " barely attacks at all (" + swings + " swings)",
+                    swings >= 6);
+        }
+    }
+
+    @Test
+    public void everyMeleeSwingHasReadableWindUp() {
+        Maps.Arena arena = Maps.ALL[0];
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            if (Weapons.DEFS[w].type != Weapons.MELEE) continue;
+            Fighter f = new Fighter(0, "P1", 300f, 610f, false);
+            f.spawnT = 0f;
+            f.giveWeapon(w);
+            f.cooldown = 0f; // a swap starts ready; hold the stick like a player
+            int start = -1;
+            int hit = -1;
+            for (int i = 0; i < 240 && hit < 0; i++) {
+                f.input(0f, 1f, 0f, false, true, false);
+                f.update(1f / 60f, arena, true, false);
+                if (start < 0 && f.attacking) start = i;
+                if (start >= 0 && f.meleeActive()) hit = i;
+            }
+            assertTrue(Weapons.name(w) + " never opens a hit window", hit >= 0);
+            int windup = hit - start;
+            assertTrue("a " + Weapons.name(w) + " hit lands only " + windup
+                    + " frame(s) after the input; every swing needs a readable wind-up",
+                    windup >= 4);
+        }
+    }
+
+    @Test
     public void heavyHitRagdollsThenAutoRecovers() {
         boot();
         game.debugStartMatch(0, 0);

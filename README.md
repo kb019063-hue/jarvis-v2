@@ -105,6 +105,22 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
 
+## Game tempo in 0.3.3
+
+The game was reported as "too fast — the AI, my attacks, everything". It was not
+a clock bug (the loop is a fixed 60 Hz accumulator driven by measured time); the
+tempo really was high. Holding the one stick auto-attacks, so the weapon cooldown
+is the game's speed, and the light weapons fired 3.5–4.6 times a second with a
+50 ms wind-up.
+
+- Attack cadence roughly halved: pistol 4.6 → 2.7/s, dual sabers 4.3 → 2.5/s,
+  fists 3.5 → 2.2/s. Damage, reach and knockback are unchanged.
+- Every swing now has a readable wind-up (50 → 100 ms before a hit is live).
+- Walk speed 360 → 320 px/s and gentler acceleration for less twitch.
+- The jump is deliberately untouched, so the 170 px platform routes still work.
+
+Full numbers and method: [docs/IMPLEMENTATION-0.3.3.md](docs/IMPLEMENTATION-0.3.3.md).
+
 ## Playability fixes in 0.3.2
 
 An independent review of 0.3.1 found five defects, two of them match-breaking.
@@ -159,7 +175,7 @@ See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test b
 
 ## Validation
 
-The repository currently contains **63 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **65 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, attack-tempo and wind-up limits, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -172,7 +188,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 6`, `versionName 0.3.2`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 7`, `versionName 0.3.3`.
 
 ## Structure
 
