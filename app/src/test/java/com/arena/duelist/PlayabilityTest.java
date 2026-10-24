@@ -183,6 +183,100 @@ public class PlayabilityTest {
         }
     }
 
+    @Test public void cpuComesDownFromSideLedgesToFinishTheFight() {
+        // Regression: the CPU used to walk out onto a side ledge, then pace
+        // above the opponent forever because a drop to the floor did not count
+        // as "progress toward the foe". 31 of 120 seeded matches never ended.
+        for (int map : new int[] { 0, 2, 6, 9 }) {
+            for (long seed : new long[] { 7, 42 }) {
+                Game g = boot(0, map);
+                g.debugSeed(seed);
+                g.debugStartFight();
+                Fighter player = g.debugFighter(0);
+                Fighter cpu = g.debugFighter(1);
+                player.reset(Maps.ALL[map].spawnAx, Maps.ALL[map].spawnAy);
+                Maps.Platform ledge = sideLedge(map);
+                cpu.reset(ledge.r.centerX(), ledge.r.top - Fighter.FEET);
+                // Fists force a real descent: a gunner could damage the player
+                // without ever leaving the ledge.
+                cpu.giveWeapon(Weapons.FIST);
+                cpu.abilityT = 100f;
+                player.spawnT = cpu.spawnT = 0f;
+                player.maxHealth = player.health = 10000f;
+                int frames = 0;
+                while (frames < 60 * 12 && player.health == player.maxHealth) {
+                    g.tick(1f / 60f);
+                    frames++;
+                }
+                assertTrue(Maps.ALL[map].name + " CPU never descended from the ledge to engage, seed " + seed,
+                        player.health < player.maxHealth);
+                assertFalse(Maps.ALL[map].name + " CPU fell out of the world, seed " + seed, cpu.dead);
+            }
+        }
+    }
+
+    @Test public void gravityOffJumpReturnsToTheArena() {
+        Game g = boot(1, 0);
+        g.profile.gravity = false;
+        g.debugStartFight();
+        Fighter player = g.debugFighter(0);
+        player.spawnT = 0f;
+        player.onGround = false;
+        player.vy = -850f; // a full jump impulse
+        float startY = player.y;
+        float peak = startY;
+        for (int i = 0; i < 60 * 6; i++) {
+            g.tick(1f / 60f);
+            peak = Math.min(peak, player.y);
+        }
+        assertTrue("a gravity-off jump must not leave the top of the world",
+                peak > Maps.ALL[0].bounds.top);
+        assertTrue("a gravity-off jump must come back down", player.onGround);
+        assertTrue("the fighter must not be stranded above the floor", player.y > startY - 5f);
+    }
+
+    @Test public void lightMeleeKnockbackMovesTheVictim() {
+        // The walk controller used to cancel a fist's 250 px/s knockback in
+        // about 11 px, so the weapon table's shove values were cosmetic.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        Fighter player = g.debugFighter(0);
+        player.spawnT = 0f;
+        float x0 = player.x;
+        player.damage(8f, 250f, -90f, false);
+        for (int i = 0; i < 60; i++) g.tick(1f / 60f);
+        assertTrue("a landed punch should visibly shove the victim",
+                Math.abs(player.x - x0) > 18f);
+    }
+
+    @Test public void seededQuickMatchesReachAResultOnEveryArena() {
+        for (int map : new int[] { 0, 2, 6, 7, 9 }) {
+            for (long seed : new long[] { 7, 42 }) {
+                Game g = boot(0, map);
+                g.debugSeed(seed);
+                int frames = 0;
+                while (frames < 60 * 60 && g.debugScreen() != 6) {
+                    g.tick(1f / 60f);
+                    frames++;
+                }
+                assertEquals("the CPU must resolve the match on " + Maps.ALL[map].name
+                        + " (seed " + seed + ")", 6, g.debugScreen());
+            }
+        }
+    }
+
+    /** Highest side ledge on an arena - the platform that used to trap the CPU. */
+    private Maps.Platform sideLedge(int map) {
+        Maps.Platform best = null;
+        float floor = Maps.ALL[map].platforms.get(0).r.top;
+        for (Maps.Platform p : Maps.ALL[map].platforms) {
+            if (p.r.width() < 140f || p.r.top > floor - 80f) continue;
+            if (best == null || p.r.top < best.r.top) best = p;
+        }
+        assertNotNull("arena must have a side ledge to test", best);
+        return best;
+    }
+
     @Test public void repeatedRealRoundsReachResultWithoutDeathLoop() {
         Game g = boot(1, 0);
         for (int round = 1; round <= 2; round++) {

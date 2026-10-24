@@ -2,9 +2,9 @@
 
 A native Android 2D stick-fighting game inspired by Neron's Brother's *Supreme Duelist Stickman*, built with original Java code and Canvas artwork.
 
-**Scope:** this is an independent, incomplete recreation—not a port and not feature-parity with the original. The current build has 12 weapons, 10 arenas and five mode families (six CPU/local entries). The larger content roster, 3–4 player party play, additional minigames, map editor and Wi-Fi multiplayer are still absent. See [the current review](docs/REVIEW.md) for the exact boundary.
+**Scope:** this is an independent, incomplete recreation—not a port and not feature-parity with the original. The current build has 12 weapons, 10 arenas and five mode families (six CPU/local entries). The larger content roster, 3–4 player party play, additional minigames, map editor and Wi-Fi multiplayer are still absent. See [the fidelity audit](docs/FIDELITY-AUDIT.md) for the exact boundary.
 
-**Install v0.3.1:** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
+**Install (latest test build):** download the APK from the [latest release](https://github.com/kb019063-hue/jarvis-v2/releases/latest) and side-load it on Android 7.0 or newer (allow unknown sources). Landscape, touch-only and offline. Releases are debug-signed test builds, not store-ready production packages.
 
 <p align="center"><img src="assets/icon_512.png" width="180" alt="Stick Duelist icon"></p>
 
@@ -105,6 +105,31 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
 
+## Playability fixes in 0.3.2
+
+An independent review of 0.3.1 found five defects, two of them match-breaking.
+All five are fixed in this build; the measurements are in
+[docs/IMPLEMENTATION-0.3.2.md](docs/IMPLEMENTATION-0.3.2.md) and the
+content/fidelity boundary is documented in
+[docs/FIDELITY-AUDIT.md](docs/FIDELITY-AUDIT.md).
+
+- **CPU ledge stall (critical).** The platform router rejected any drop that did
+  not move the CPU horizontally toward the opponent, so on a side ledge it
+  stood still and the round never ended. 31 of 120 seeded matches stalled;
+  now 0 of 600.
+- **Gravity OFF (critical).** The house rule removed gravity entirely, so one
+  jump carried the fighter 1363 px above the arena and it never came down.
+  It is now a floaty low-gravity rule (450 px/s² with air damping and a sky
+  clamp): a full jump peaks 177 px and lands.
+- **Hazard avoidance.** Lava beneath a solid floor no longer counts as lethal
+  for a grounded CPU.
+- **Knockback was cancelled.** The walk controller overwrote the shove within
+  two frames, so hit impulses and dash releases did almost nothing. Hits now
+  hold a 0.2 s impulse window that brakes at 1200 px/s²: fist 11→24 px,
+  sword dash reach 119→238 px.
+- **Stun locked steering.** Being hit now slows movement to 45 % instead of
+  freezing it for the whole hurt window.
+
 ## Playability fixes in 0.3.1
 
 This pass addresses phone reports of passive close-range AI, repeated corpse falls, pumping camera zoom and central pits that made fighting awkward:
@@ -128,7 +153,7 @@ See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test b
 
 ## Validation
 
-The repository currently contains **58 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **62 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -141,7 +166,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 5`, `versionName 0.3.1`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 6`, `versionName 0.3.2`.
 
 ## Structure
 

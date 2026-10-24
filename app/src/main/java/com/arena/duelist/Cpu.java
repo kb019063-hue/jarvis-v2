@@ -138,7 +138,11 @@ public final class Cpu {
 
         if (me.onGround && navigate(me, foe, arena)) return;
 
-        boolean hazardAhead = hazardDanger(me, arena, me.x + dir * 85f, 48f);
+        // Probe ahead only as far as the opponent. A fixed 85 px look-ahead
+        // reached past a foe standing near the arena wall, into the edge lava
+        // below, so the CPU kept retreating instead of closing in for the kill.
+        float probe = Math.min(85f, Math.max(0f, dist - 30f));
+        boolean hazardAhead = probe > 8f && hazardDanger(me, arena, me.x + dir * probe, 48f);
         if (hazardAhead) {
             jump = false;
             move = -dir;
@@ -248,8 +252,21 @@ public final class Cpu {
         // a jump. The airborne controller then steers to the selected landing.
         if (to.top > from.top + 24f) {
             routePlatform = next;
-            routeLandingX = clamp(me.x + dir * 80f, to.left + 24f, to.right - 24f);
-            move = dir;
+            // Land as close to the opponent as the lower platform allows.
+            routeLandingX = clamp(foe.x, to.left + 24f, to.right - 24f);
+            // Walk to the ledge edge that gets us down fastest. Steering at the
+            // foe's x while still on the ledge made the CPU pace back and forth
+            // above them forever: whenever it crossed their column, the
+            // direction flipped and it never reached an edge.
+            float exitX;
+            if (foe.x < from.left) {
+                exitX = from.left - 40f;
+            } else if (foe.x > from.right) {
+                exitX = from.right + 40f;
+            } else {
+                exitX = me.x < from.centerX() ? from.left - 40f : from.right + 40f;
+            }
+            move = exitX > me.x ? 1f : -1f;
             attack = false;
             shield = false;
             jump = false;
@@ -288,12 +305,18 @@ public final class Cpu {
             }
             RectF to = arena.platforms.get(i).r;
             float centerDelta = to.centerX() - from.centerX();
-            if (Math.abs(centerDelta) > 1f && (centerDelta > 0f ? 1f : -1f) != dir) {
-                continue; // every step must make horizontal progress toward the foe
-            }
             float rise = from.top - to.top;
             if (rise > MAX_ROUTE_RISE) {
-                continue;
+                continue; // target too high to reach
+            }
+            // Dropping to a lower platform does not need horizontal progress
+            // toward the foe: gravity carries the fighter down, and the floor's
+            // centre is often on the opposite side of the foe. Requiring one
+            // made the CPU refuse to ever come down from a side ledge.
+            boolean dropping = rise < -24f;
+            if (!dropping && Math.abs(centerDelta) > 1f
+                    && (centerDelta > 0f ? 1f : -1f) != dir) {
+                continue; // every level/upward step must make progress toward the foe
             }
             float gap = horizontalGap(from, to);
             if (gap > MAX_ROUTE_GAP && to.top <= from.top + 40f) {
@@ -362,12 +385,31 @@ public final class Cpu {
 
     /** True when a horizontal position leads into a hazard on this level. */
     private boolean hazardDanger(Fighter me, Maps.Arena arena, float x, float margin) {
+        float feet = me.y + Fighter.FEET;
         for (int i = 0; i < arena.hazards.size(); i++) {
             Maps.Hazard h = arena.hazards.get(i);
             boolean nearX = x > h.r.left - margin && x < h.r.right + margin;
-            boolean relevantY = me.y + Fighter.FEET > h.r.top - 175f
+            boolean relevantY = feet > h.r.top - 175f
                     && me.y - Fighter.HEAD < h.r.bottom + 20f;
+            // Lava sitting below a solid floor is not a threat. Without this,
+            // the CPU saw the edge lava under the main floor (which is 80 px
+            // above it) as lethal, refused to approach a player standing near
+            // the arena wall and left the match unfinished.
+            if (relevantY && h.r.top > feet + 6f && hasFooting(arena, x, feet)) {
+                relevantY = false;
+            }
             if (nearX && relevantY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when a platform's top surface is under this x at the given height. */
+    private boolean hasFooting(Maps.Arena arena, float x, float feetY) {
+        for (int i = 0; i < arena.platforms.size(); i++) {
+            RectF r = arena.platforms.get(i).r;
+            if (x > r.left + 6f && x < r.right - 6f && Math.abs(r.top - feetY) < 24f) {
                 return true;
             }
         }

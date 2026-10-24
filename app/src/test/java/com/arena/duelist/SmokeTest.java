@@ -281,12 +281,17 @@ public class SmokeTest {
     }
 
     @Test
-    public void gravityOffStopsFighterAcceleration() {
+    public void gravityOffUsesGentleFallInsteadOfFullGravity() {
+        // True zero gravity was unplayable with a one-stick scheme: nothing
+        // pulled a jumping fighter back down, so one jump carried it out of the
+        // arena and the match could never finish. Gravity OFF is now a floaty
+        // low-G drift - clearly weaker than the 1900 px/s^2 default.
         Fighter f = new Fighter(0, "TEST", 300f, 220f, false);
         f.spawnT = 0f;
         f.onGround = false;
         f.update(1f / 60f, Maps.ALL[0], false, false);
-        assertEquals("zero-G should not add downward velocity", 0f, f.vy, 0.001f);
+        assertTrue("gravity OFF must still exert a gentle downward pull", f.vy > 0f);
+        assertTrue("gravity OFF must be far weaker than normal gravity", f.vy < 12f);
     }
 
     @Test

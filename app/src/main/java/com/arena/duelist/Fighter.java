@@ -13,6 +13,13 @@ public final class Fighter {
     private static final float POISE_HOLD = 1.1f;
     /** How fast a hit reaction wears off (per second). */
     private static final float LIMP_RECOVER = 2.2f;
+    /**
+     * Downward acceleration used when the "Gravity" house rule is off. It is
+     * about a quarter of normal gravity: floaty, but jumps still land.
+     */
+    private static final float ZERO_G_GRAVITY = 450f;
+    /** Deceleration (px/s^2) applied to knockback and dash impulses. */
+    private static final float IMPULSE_BRAKE = 1200f;
     public static final float FEET = 30f;
     public static final float HEAD = 30f; // collision/AI clearance, not the drawn head radius
     public static final float CROUCH_HEAD = 18f;
@@ -105,6 +112,11 @@ public final class Fighter {
     public boolean justDown;
     /** Short grace period after standing up so the fighter is not re-launched. */
     public float iframes;
+    /**
+     * Remaining seconds in which an external velocity (knockback or a
+     * release-skill dash) outranks the walk controller's braking.
+     */
+    public float impulseT;
     /** Poise: accumulates with hits; at POISE_MAX the fighter goes down. */
     public float poise;
     public float poiseT;
@@ -237,6 +249,9 @@ public final class Fighter {
         wobX -= kx * 0.010f;
         wobY -= ky * 0.010f;
         hurtT = 0.22f;
+        // Let the knockback carry for a moment instead of being cancelled by
+        // the movement controller on the very next frame.
+        impulseT = Math.max(impulseT, 0.20f);
         flashT = 0.16f;
 
         // every hit knocks the body out of its pose for a moment
@@ -334,6 +349,9 @@ public final class Fighter {
         attackT = attackDur;
         cooldown = d.cooldown;
         hitThisSwing = false;
+        if (swingBoost > 0f) {
+            impulseT = Math.max(impulseT, attackDur);
+        }
 
         // A small, weapon-weighted step makes close combat feel committed instead
         // of like a stationary arm animation. Release skills set swingBoost first
@@ -390,6 +408,9 @@ public final class Fighter {
         if (iframes > 0f) {
             iframes -= dt;
         }
+        if (impulseT > 0f) {
+            impulseT = Math.max(0f, impulseT - dt);
+        }
         if (limp > 0f) {
             limp = Math.max(0f, limp - LIMP_RECOVER * dt);
         }
@@ -434,6 +455,10 @@ public final class Fighter {
             crouch = false;
         }
         boolean canAct = inputAllowed && hurtT <= 0f && spawnT <= 0f;
+        // Being hit slows you down but must not freeze you completely: the old
+        // rule blocked movement for the whole 0.22s recoil, so a fast weapon
+        // could chain hits and keep a player from ever walking away.
+        boolean canMove = inputAllowed && spawnT <= 0f;
         attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking;
         if (attackQueued) {
             attackQueued = false;
@@ -465,7 +490,10 @@ public final class Fighter {
         crouch = !shieldAllowed && shieldHeld && canAct && onGround;
 
         // Horizontal movement
-        float target = canAct ? moveX : 0f;
+        float target = canMove ? moveX : 0f;
+        if (hurtT > 0f) {
+            target *= 0.45f;
+        }
         if (crouch && onGround) {
             target *= 0.25f;
         }
@@ -478,10 +506,17 @@ public final class Fighter {
         float accel = onGround ? 3400f : 1900f;
         float maxSpeed = 360f;
         float desired = target * maxSpeed;
+        // A hit's knockback (and a release-skill dash) sets vx directly. Braking
+        // those at the walk acceleration erased a 250 px/s hit in about 11 px,
+        // which made every light weapon feel weightless. While an impulse is
+        // active - and for anything faster than a walk - the controller bleeds
+        // the external velocity slowly instead of stamping it out.
+        boolean impulse = impulseT > 0f || Math.abs(vx) > maxSpeed;
+        float rate = impulse ? IMPULSE_BRAKE : accel;
         if (vx < desired) {
-            vx = Math.min(desired, vx + accel * dt);
+            vx = Math.min(desired, vx + rate * dt);
         } else if (vx > desired) {
-            vx = Math.max(desired, vx - accel * dt);
+            vx = Math.max(desired, vx - rate * dt);
         }
         if (Math.abs(moveX) > 0.25f && Math.abs(vx) > 20f) {
             facing = moveX > 0 ? 1 : -1;
@@ -504,9 +539,13 @@ public final class Fighter {
                 vy = 1500f;
             }
         } else {
-            // Gravity OFF is true zero-G. Keep a little air friction, but do not
-            // continue adding downward acceleration under a misleading toggle.
-            vy *= 0.995f;
+            // Gravity OFF is low-gravity drift, not true zero-G. The one-stick
+            // control scheme has no vertical thrust: with no downward force at
+            // all, a single jump coasted upward forever, carried the fighter out
+            // of the arena and made the match impossible to finish. This keeps
+            // floaty, slow falls while guaranteeing that jumps come back down
+            // and that the 170 px arena ledges stay reachable.
+            vy = vy * 0.95f + ZERO_G_GRAVITY * dt;
             vx *= 0.995f;
         }
 
@@ -518,6 +557,13 @@ public final class Fighter {
         boolean wasGround = onGround;
         onGround = false;
         collide(arena, dt);
+        if (!gravityOn && y - headExtent() < arena.bounds.top) {
+            // Safety net for low-G: nothing may leave the world through the sky.
+            y = arena.bounds.top + headExtent();
+            if (vy < 0f) {
+                vy = 0f;
+            }
+        }
         if (onGround) {
             coyote = 0.1f;
             walkPhase += Math.abs(vx) * dt * 0.035f;
@@ -776,6 +822,7 @@ public final class Fighter {
         weaponAngle = facing >= 0 ? 0f : (float) Math.PI;
         prevWeaponPoseValid = false;
         hurtT = 0;
+        impulseT = 0f;
         spawnT = 0.9f;
         flashT = 0;
         onGround = true;
