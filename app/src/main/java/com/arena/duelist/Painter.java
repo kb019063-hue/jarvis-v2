@@ -12,18 +12,42 @@ import android.graphics.Typeface;
 /** Thin drawing helper over Canvas. All calls use world/virtual units. */
 public final class Painter {
 
-    public final Canvas c;
+    public Canvas c;
+    /** Scratch rect reused by every oval: this is a per-frame draw path. */
+    private final RectF ovalRect = new RectF();
     public final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     public final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
     public final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public Painter(Canvas c) {
         this.c = c;
+        configure();
+    }
+
+    private void configure() {
+        p.setAntiAlias(true);
         p.setStyle(Paint.Style.FILL);
+        line.setAntiAlias(true);
         line.setStyle(Paint.Style.STROKE);
         line.setStrokeCap(Paint.Cap.ROUND);
+        text.setAntiAlias(true);
         text.setTypeface(Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD));
         text.setColor(0xFFFFFFFF);
+    }
+
+    /**
+     * Points this painter at a new frame's canvas and restores exactly the
+     * state a freshly constructed Painter would have. Draw used to allocate a
+     * new Painter (and three Paints) every frame; this is the reset that makes
+     * reuse safe. Note it is not {@link #reset()}, which only clears alpha and
+     * shaders and is called in the middle of a frame.
+     */
+    public void beginFrame(Canvas c) {
+        this.c = c;
+        p.reset();
+        line.reset();
+        text.reset();
+        configure();
     }
 
     public int color(int argb) {
@@ -77,7 +101,8 @@ public final class Painter {
     public void oval(float cx, float cy, float rx, float ry, int color) {
         p.setShader(null);
         p.setColor(color);
-        c.drawOval(new RectF(cx - rx, cy - ry, cx + rx, cy + ry), p);
+        ovalRect.set(cx - rx, cy - ry, cx + rx, cy + ry);
+        c.drawOval(ovalRect, p);
     }
 
     public void circle(float x, float y, float r, int color) {

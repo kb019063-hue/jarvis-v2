@@ -227,6 +227,21 @@ public class SmokeTest {
     }
 
     @Test
+    public void repeatedDrawsKeepTheMenuHitboxesWorking() {
+        // Draw used to allocate a Painter, its three Paints, a Path per hair and
+        // blade, and a Btn + RectF for every menu button, every frame. Those are
+        // pooled now; this checks the pool did not break hit-testing.
+        boot();
+        for (int i = 0; i < 40; i++) {
+            game.draw(canvas);
+        }
+        tap(1020, 154);                       // QUICK FIGHT
+        assertEquals("a button must still be live after repeated draws", 1, game.debugScreen());
+        tap(210, 166);                        // first arena
+        assertEquals("and must still start the match", 5, game.debugScreen());
+    }
+
+    @Test
     public void androidBackClearsStaleMenuHitboxes() {
         boot();
         tap(1020, 390); // Arsenal
@@ -281,12 +296,17 @@ public class SmokeTest {
     }
 
     @Test
-    public void gravityOffStopsFighterAcceleration() {
+    public void gravityOffUsesGentleFallInsteadOfFullGravity() {
+        // True zero gravity was unplayable with a one-stick scheme: nothing
+        // pulled a jumping fighter back down, so one jump carried it out of the
+        // arena and the match could never finish. Gravity OFF is now a floaty
+        // low-G drift - clearly weaker than the 1900 px/s^2 default.
         Fighter f = new Fighter(0, "TEST", 300f, 220f, false);
         f.spawnT = 0f;
         f.onGround = false;
         f.update(1f / 60f, Maps.ALL[0], false, false);
-        assertEquals("zero-G should not add downward velocity", 0f, f.vy, 0.001f);
+        assertTrue("gravity OFF must still exert a gentle downward pull", f.vy > 0f);
+        assertTrue("gravity OFF must be far weaker than normal gravity", f.vy < 12f);
     }
 
     @Test
@@ -391,8 +411,12 @@ public class SmokeTest {
     @Test
     public void crouchKeepsFeetOnThePlatform() {
         Maps.Arena arena = Maps.ALL[3];
-        Fighter f = new Fighter(0, "TEST", 500f, 590f, false);
-        f.reset(500f, 590f);
+        // Stand on the arena's own floor: the old hard-coded 590 was written
+        // for the 640-top maps and left the fighter falling once the arenas
+        // were rebuilt in 0.3.9.
+        float floorY = arena.platforms.get(0).r.top - Fighter.FEET;
+        Fighter f = new Fighter(0, "TEST", 500f, floorY, false);
+        f.reset(500f, floorY);
         f.spawnT = 0f;
         f.shieldHeld = true;
         f.update(1f / 60f, arena, true, false);
@@ -442,6 +466,220 @@ public class SmokeTest {
         assertTrue("the body should recover to its pose, was " + game.debugPoseError(1),
                 game.debugPoseError(1) < 6f);
         assertTrue("limp must decay to zero", game.debugLimp(1) < 0.01f);
+    }
+
+    @Test
+    public void everyRangedMagazineReloadsInsteadOfBecomingFists() {
+        // 0.3.3 and earlier stripped the weapon when the last round fired, so a
+        // 960-coin boomerang was one throw and then bare fists for the round.
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            if (Weapons.DEFS[w].type == Weapons.MELEE) continue;
+            boot();
+            game.debugStartMatch(1, 0);
+            game.debugStartFight();
+            Fighter p = game.debugFighter(0);
+            p.reset(400, 610);
+            p.spawnT = 0f;
+            p.giveWeapon(w);
+            int guard = 0;
+            while (p.ammo > 0 && guard++ < 1200) {
+                p.input(0f, 1f, 0f, false, true, false);
+                game.tick(1f / 60f);
+            }
+            assertEquals(Weapons.name(w) + " must still be equipped when dry",
+                    w, p.weapon);
+            assertEquals(Weapons.name(w) + " should be empty", 0, p.ammo);
+            float reload = Weapons.reloadTime(w);
+            assertTrue(Weapons.name(w) + " needs a reload time", reload > 0f);
+            int frames = 0;
+            while (p.ammo == 0 && frames++ < 600) {
+                game.tick(1f / 60f);
+            }
+            assertEquals(Weapons.name(w) + " should reload a full magazine",
+                    Weapons.DEFS[w].ammo, p.ammo);
+            assertTrue(Weapons.name(w) + " reloaded in " + frames + " frames, expected about "
+                            + (int) (reload * 60), Math.abs(frames - reload * 60) < 24);
+        }
+    }
+
+    @Test
+    public void emptyMagazineCannotStartASwing() {
+        boot();
+        game.debugStartMatch(1, 0);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        p.reset(400, 610);
+        p.spawnT = 0f;
+        p.giveWeapon(Weapons.BOOMERANG);
+        p.ammo = 0;
+        p.reloadT = Weapons.reloadTime(Weapons.BOOMERANG);
+        for (int i = 0; i < 10; i++) {
+            p.input(0f, 1f, 0f, false, true, false);
+            game.tick(1f / 60f);
+        }
+        assertFalse("an empty weapon must not swing", p.attacking);
+        assertEquals("an empty weapon must not spawn shots", 0, game.debugShotCount());
+    }
+
+    @Test
+    public void weaponDropNeedsADeliberateDownPress() {
+        // Walking over a drop used to replace your weapon with no input at all,
+        // so a bought weapon could silently become a worse one.
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        Fighter cpu = game.debugFighter(1);
+        cpu.cpu = false; // keep the AI from claiming the drop first
+        // Stand on the arena's own floor: 590 was written for the 640-top maps
+        // and leaves both fighters in the air on the rebuilt 800-top arenas.
+        float floor = Maps.ALL[0].platforms.get(0).r.top;
+        cpu.reset(120, floor - Fighter.FEET);
+        p.reset(620, floor - Fighter.FEET);
+        p.spawnT = cpu.spawnT = 0f;
+        p.giveWeapon(Weapons.SWORD);
+        game.debugAddPickup(Weapons.PISTOL, 620f, floor - 12f);
+        assertEquals("the drop should exist", 1, game.debugPickupCount());
+
+        step(10);
+        assertEquals("walking over a drop must not swap the weapon",
+                Weapons.SWORD, p.weapon);
+        assertEquals("the drop must still be there", 1, game.debugPickupCount());
+
+        // press DOWN: the swap becomes deliberate
+        game.pointerDown(1, 200f, 300f);
+        game.pointerMove(1, 200f, 420f);
+        step(2);
+        assertEquals("pressing DOWN on a drop should swap", Weapons.PISTOL, p.weapon);
+        assertEquals("the old weapon is left on the floor", 1, game.debugPickupCount());
+        assertEquals("the drop on the floor is the old weapon",
+                Weapons.SWORD, game.debugPickupWeapon(0));
+
+        // holding DOWN must not immediately swap back
+        step(60);
+        assertEquals("holding DOWN must not ping-pong the swap", Weapons.PISTOL, p.weapon);
+    }
+
+    @Test
+    public void cpuStartsArmedInMostMatches() {
+        // An unarmed CPU re-arms from drops only about half the time, so a 45%
+        // unarmed start rate meant many fights with an opponent that owns no
+        // weapon at all. Measured over 200 seeds, the floor is 10%.
+        int unarmed = 0;
+        for (int i = 1; i <= 200; i++) {
+            boot();
+            game.debugSeed(i * 7919L);
+            game.debugStartMatch(0, 0);
+            if (game.debugFighter(1).weapon == Weapons.FIST) {
+                unarmed++;
+            }
+        }
+        assertTrue("the CPU starts unarmed in " + unarmed + "/200 matches; most fights "
+                + "should feature a weapon", unarmed <= 40);
+        assertTrue("the CPU should still be unarmed sometimes", unarmed >= 1);
+    }
+
+    @Test
+    public void noMeleeWeaponOutclassesTheRoster() {
+        // Fastest neutral kill was the Energy Blade at 40 dps, far ahead of the
+        // next melee weapon. No melee weapon may exceed 1.1x the best of the
+        // others, so one purchase never wins the game on its own.
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            Weapons.Def d = Weapons.DEFS[w];
+            if (d.type != Weapons.MELEE) continue;
+            float dps = d.damage / d.cooldown;
+            assertTrue(Weapons.name(w) + " deals " + dps + " dps, above the 31 dps ceiling",
+                    dps <= 31f);
+        }
+        float blade = Weapons.DEFS[Weapons.ENERGY_BLADE].damage / Weapons.DEFS[Weapons.ENERGY_BLADE].cooldown;
+        float sword = Weapons.DEFS[Weapons.SWORD].damage / Weapons.DEFS[Weapons.SWORD].cooldown;
+        assertTrue("the flagship weapon should be strong but not dominant ("
+                        + blade + " vs " + sword + " dps)",
+                blade < sword * 1.10f);
+    }
+
+    @Test
+    public void winStreakPaysBonusCoins() {
+        // The streak counter was incremented, saved and displayed on the menu
+        // but never paid anything.
+        boot();
+        game.profile.streak = 3;         // this win becomes the fourth in a row
+        int before = game.profile.coins;
+        game.debugStartMatch(0, 0);
+        game.debugSetRoundWins(1, 0);    // one round already won: this K.O. ends the match
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.kill(0);
+        for (int i = 0; i < 240; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("a win should be recorded", 4, game.profile.streak);
+        assertEquals("coins = base 70 + streak bonus 30", before + 70 + 30, game.profile.coins);
+    }
+
+    @Test
+    public void winStreakBonusIsCapped() {
+        boot();
+        game.profile.streak = 20;
+        int before = game.profile.coins;
+        game.debugStartMatch(0, 0);
+        game.debugSetRoundWins(1, 0);
+        game.debugStartFight();
+        game.debugFighter(1).kill(0);
+        for (int i = 0; i < 240; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("the streak bonus caps at 50", before + 70 + 50, game.profile.coins);
+    }
+
+    @Test
+    public void attackTempoStaysHuman() {
+        // Holding the one stick auto-attacks, so the weapon cooldown is the
+        // game's real tempo. 0.3.1 fired the light weapons 3.5-4.6 times a
+        // second and the whole game read as "too fast".
+        Maps.Arena arena = Maps.ALL[0];
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            Fighter f = new Fighter(0, "P1", 300f, 610f, false);
+            f.spawnT = 0f;
+            f.giveWeapon(w);
+            int swings = 0;
+            boolean was = false;
+            for (int i = 0; i < 600; i++) {
+                f.input(0f, 1f, 0f, false, true, false);
+                f.update(1f / 60f, arena, true, false);
+                if (f.attacking && !was) swings++;
+                was = f.attacking;
+            }
+            assertTrue(Weapons.name(w) + " attacks more than three times per second ("
+                    + swings + " swings in ten seconds)", swings <= 30);
+            assertTrue(Weapons.name(w) + " barely attacks at all (" + swings + " swings)",
+                    swings >= 6);
+        }
+    }
+
+    @Test
+    public void everyMeleeSwingHasReadableWindUp() {
+        Maps.Arena arena = Maps.ALL[0];
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            if (Weapons.DEFS[w].type != Weapons.MELEE) continue;
+            Fighter f = new Fighter(0, "P1", 300f, 610f, false);
+            f.spawnT = 0f;
+            f.giveWeapon(w);
+            f.cooldown = 0f; // a swap starts ready; hold the stick like a player
+            int start = -1;
+            int hit = -1;
+            for (int i = 0; i < 240 && hit < 0; i++) {
+                f.input(0f, 1f, 0f, false, true, false);
+                f.update(1f / 60f, arena, true, false);
+                if (start < 0 && f.attacking) start = i;
+                if (start >= 0 && f.meleeActive()) hit = i;
+            }
+            assertTrue(Weapons.name(w) + " never opens a hit window", hit >= 0);
+            int windup = hit - start;
+            assertTrue("a " + Weapons.name(w) + " hit lands only " + windup
+                    + " frame(s) after the input; every swing needs a readable wind-up",
+                    windup >= 4);
+        }
     }
 
     @Test
@@ -502,6 +740,24 @@ public class SmokeTest {
         }
         cpu.damage(8f, 250f, -90f, false);
         assertTrue("the fourth jab breaks poise", cpu.down);
+    }
+
+    @Test
+    public void downedFighterTakesHalfDamage() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.maxHealth = cpu.health = 100f;
+        // 40 damage with 600 knockback breaks poise outright.
+        cpu.damage(40f, 600f, -120f, false);
+        assertTrue("a heavy hit should knock the fighter down", cpu.down);
+        float before = cpu.health;
+        cpu.hurtT = 0f;
+        cpu.iframes = 0f;
+        cpu.damage(20f, 0f, 0f, true);
+        assertEquals("a downed fighter takes half damage while helpless",
+                10f, before - cpu.health, 0.01f);
     }
 
     @Test
@@ -598,16 +854,20 @@ public class SmokeTest {
 
     @Test
     public void fighterCanJumpThroughAndLandOnThinPlatform() {
-        Fighter f = new Fighter(1, "CPU", 1020f, 610f, true);
+        // Rooftop Dusk in 0.3.9: the 660 ledge under the fighter runs
+        // 940..1260, and the thin top ledge sits at 520 spanning 1020..1180.
+        // Start on the lower ledge and jump straight up through the top one.
+        Fighter f = new Fighter(1, "CPU", 1100f, 630f, true);
         f.spawnT = 0f;
         f.onGround = true;
         f.jump();
         for (int i = 0; i < 120; i++) {
             f.update(1f / 60f, Maps.ALL[0], true, true);
         }
-        assertTrue("fighter should land on the ledge above the first-map spawn", f.onGround);
-        assertEquals("Rooftop Dusk upper ledge must be physically reachable",
-                440f, f.y, 2f);
+        assertTrue("fighter should land on the thin ledge above the lower one", f.onGround);
+        // f.y is the foot position: standing on a 520-top ledge means y = 490.
+        assertEquals("Rooftop Dusk top ledge must be physically reachable",
+                490f, f.y, 2f);
     }
 
     @Test

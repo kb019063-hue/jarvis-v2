@@ -100,7 +100,15 @@ public final class Game {
     private final Random rnd = new Random();
     private final ArrayList<Projectile> shots = new ArrayList<Projectile>();
     private final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
+    /** Previous frame's DOWN input, so a pickup needs a fresh press. */
+    private final boolean[] downPrev = new boolean[2];
+    /**
+     * Live menu hitboxes for this frame. The list is a pool: every menu used to
+     * allocate a Btn (and its RectF) for every button on every frame, which is
+     * ten objects a frame on the title screen alone.
+     */
     private final ArrayList<Btn> uiBtns = new ArrayList<Btn>();
+    private int uiBtnCount;
     private final Cpu cpu = new Cpu();
     private final Football football = new Football();
 
@@ -126,6 +134,8 @@ public final class Game {
     private String resultTitle = "";
     private String resultSub = "";
     private int resultCoins;
+    /** Extra coins for a win streak; the streak counter used to pay nothing. */
+    private int resultStreakBonus;
     private boolean playerWon;
     private float resultDelay;
     private int confirmBuy = -1;
@@ -146,11 +156,28 @@ public final class Game {
     private float hitStop;
     private float time;
     private float spawnTimer;
+    /** Football has a match clock and duels a round clock; see CHANGELOG 0.3.6. */
+    private static final float FOOTBALL_SECONDS = 120f;
+    private static final float ROUND_SECONDS = 90f;
+    /**
+     * A drawn round awards no point and replays, by design. Without a cap two
+     * evenly matched players who both time out would replay without limit, so
+     * the match itself becomes a draw after this many rounds.
+     */
+    private static final int MAX_ROUNDS = 6;
+    private float matchClock;
+    private float roundClock;
+    /** A drawn match: no win, no loss, no streak change. */
+    private boolean drawn;
 
     // controls
     private final Stick stickA = new Stick();
     private final Stick stickB = new Stick();
     private final RectF pauseRect = new RectF();
+    // Draw scratch. Every one of these used to be allocated inside a per-frame
+    // draw method; see Draw.java in tools/verify for the before/after count.
+    private final RectF drawRect = new RectF();
+    private final Path drawPath = new Path();
     private final Fighter previewFighter = new Fighter(0, "PREVIEW", 0, 0, false);
 
     public Game(Context ctx, Host host) {
@@ -208,7 +235,7 @@ public final class Game {
                 paused = true;
                 // drop last frame's menu hitboxes so an early tap cannot hit a
                 // stale button from the screen we came from
-                uiBtns.clear();
+                uiBtnCount = 0;
                 releaseControls();
                 return;
             }
@@ -277,7 +304,7 @@ public final class Game {
     }
 
     private void handleMenuTap(float x, float y) {
-        for (int i = uiBtns.size() - 1; i >= 0; i--) {
+        for (int i = uiBtnCount - 1; i >= 0; i--) {
             Btn b = uiBtns.get(i);
             if (b.r.contains(x, y)) {
                 act(b.action);
@@ -289,7 +316,7 @@ public final class Game {
     private void act(int action) {
         sfx(SoundFx.CLICK);
         // No screen transition may leave active hitboxes from the old screen.
-        uiBtns.clear();
+        uiBtnCount = 0;
         // "tap again to confirm" states: any other tap cancels them, which keeps
         // a stale confirmation from spending coins or wiping progress later
         boolean keepReset = confirmReset && action == A_RESET;
@@ -464,7 +491,7 @@ public final class Game {
         releaseControls();
         if (screen == S_PLAY) {
             paused = true;
-            uiBtns.clear();
+            uiBtnCount = 0;
         }
     }
 
@@ -476,7 +503,7 @@ public final class Game {
             } else {
                 paused = true;
             }
-            uiBtns.clear();
+            uiBtnCount = 0;
             releaseControls();
             return true;
         }
@@ -484,7 +511,7 @@ public final class Game {
             screen = S_TITLE;
             // Back is a screen transition too: do not leave the old menu's
             // buttons tappable until the next draw rebuilds the title hitboxes.
-            uiBtns.clear();
+            uiBtnCount = 0;
             releaseControls();
             return true;
         }
@@ -572,10 +599,14 @@ public final class Game {
         cpu.reset();
         shots.clear();
         pickups.clear();
+        downPrev[0] = downPrev[1] = false;
         fx.clear();
         roundWinsA = 0;
         roundWinsB = 0;
         roundDraw = false;
+        drawn = false;
+        matchClock = FOOTBALL_SECONDS;
+        roundClock = ROUND_SECONDS;
         roundNumber = 1;
         wave = 1;
         bossIndex = 0;
@@ -601,7 +632,12 @@ public final class Game {
     }
 
     private int rndWeapon() {
-        if (rnd.nextFloat() < 0.45f) {
+        // The CPU used to start unarmed 45% of the time (measured 131/300
+        // matches). Drops are its only way to re-arm, and it managed that in
+        // just 58% of those fights - 42% ended with the opponent still holding
+        // nothing, which also meant the whole weapon roster never appeared.
+        // Unarmed starts are now a rarity rather than half the game.
+        if (rnd.nextFloat() < 0.10f) {
             return Weapons.FIST;
         }
         return 1 + rnd.nextInt(Weapons.COUNT - 1);
@@ -713,6 +749,15 @@ public final class Game {
             stepFootball(dt);
             return;
         }
+        // Rounds are K.O.-based, so a round clock only matters when neither
+        // fighter can finish the other. Without it a local duel in which both
+        // players simply avoid each other never ended (measured: still running
+        // after 300 s). Time-out awards the round on remaining health.
+        roundClock = Math.max(0f, roundClock - dt);
+        if (roundClock <= 0f) {
+            onRoundTimeout();
+            return;
+        }
         spawnTimer -= dt;
         if (spawnTimer <= 0 && pickups.size() < 3 && mode != M_SURVIVAL) {
             spawnTimer = 5.5f + rnd.nextFloat() * 3f;
@@ -782,6 +827,14 @@ public final class Game {
 
     /** Football has ball contact, not weapon damage, ammo drops or K.O. victories. */
     private void stepFootball(float dt) {
+        // Goals alone could not end a match: the ball only moves when someone
+        // kicks it, so a defensive local game ran forever (measured: still
+        // running after 300 s). A clock bounds the match; the score decides it.
+        matchClock = Math.max(0f, matchClock - dt);
+        if (matchClock <= 0f) {
+            endFootballOnTime();
+            return;
+        }
         applyStick(fighters[0], stickA);
         Fighter b = fighters[1];
         if (isLocal()) {
@@ -873,12 +926,14 @@ public final class Game {
         sfx(SoundFx.THROW);
         host.vibrate(8);
 
+        // Empty magazines reload. They used to strip the weapon and drop the
+        // fighter to bare fists for the rest of the round, which made every
+        // ranged weapon a few seconds of play followed by a downgrade.
         if (f.ammo > 0) {
             f.ammo--;
-            if (f.ammo <= 0) {
-                f.ammo = -1;
-                f.weapon = Weapons.FIST;
-                fx.floatText(f.x, f.y - 60, "OUT OF AMMO", 0x88FFFFFF);
+            if (f.ammo == 0) {
+                f.reloadT = Weapons.reloadTime(f.weapon);
+                fx.floatText(f.x, f.y - 60, "RELOADING", 0x88FFFFFF);
             }
         }
     }
@@ -1290,7 +1345,19 @@ public final class Game {
         }
     }
 
+    /**
+     * A drop is claimed deliberately: a human must press DOWN while standing on
+     * it. Walking over one used to swap the weapon with no input at all, so a
+     * bought weapon could silently become a worse one. The CPU keeps the old
+     * walk-over grab so its behaviour is unchanged.
+     */
     private void updatePickups(float dt) {
+        boolean[] grab = new boolean[2];
+        for (int f = 0; f < 2; f++) {
+            Fighter ft = fighters[f];
+            grab[f] = ft.cpu || (ft.shieldHeld && !downPrev[f]);
+            downPrev[f] = ft.shieldHeld;
+        }
         for (int i = pickups.size() - 1; i >= 0; i--) {
             Pickup pk = pickups.get(i);
             pk.t += dt;
@@ -1310,12 +1377,23 @@ public final class Game {
                 if (ft.dead) {
                     continue;
                 }
-                if (Math.abs(ft.x - pk.x) < 38f && Math.abs(ft.y - pk.y) < 60f) {
+                if (grab[f] && Math.abs(ft.x - pk.x) < 38f && Math.abs(ft.y - pk.y) < 60f) {
+                    int previous = ft.weapon;
                     ft.giveWeapon(pk.weapon);
                     sfx(SoundFx.PICKUP);
                     fx.ring(pk.x, pk.y, Weapons.color(pk.weapon), 18, 0.35f);
                     fx.floatText(pk.x, pk.y - 40f, Weapons.name(pk.weapon), Weapons.color(pk.weapon));
                     pickups.remove(i);
+                    // Leave what you were carrying on the floor, so a swap is
+                    // never a loss and the old weapon can be picked back up.
+                    if (previous != Weapons.FIST && previous != pk.weapon) {
+                        Pickup back = new Pickup();
+                        back.weapon = previous;
+                        back.x = pk.x;
+                        back.y = pk.y - 6f;
+                        back.vy = -140f;
+                        pickups.add(back);
+                    }
                     break;
                 }
             }
@@ -1403,6 +1481,58 @@ public final class Game {
         host.vibrate(60);
     }
 
+    /** Round clock expired: the healthier fighter takes the round. */
+    private void onRoundTimeout() {
+        phase = PH_ROUND_END;
+        phaseT = 2.2f;
+        float a = fighters[0].health / Math.max(1f, fighters[0].maxHealth);
+        float b = fighters[1].health / Math.max(1f, fighters[1].maxHealth);
+        roundDraw = Math.abs(a - b) < 0.02f;
+        if (!roundDraw) {
+            if (a > b) {
+                roundWinsA++;
+            } else {
+                roundWinsB++;
+            }
+        }
+        shots.clear();
+        releaseControls();
+        shake = 6f;
+        if (profile.voice) {
+            announce(roundDraw ? "Time up, draw" : "Time up");
+        }
+        sfx(SoundFx.KO);
+        host.vibrate(40);
+    }
+
+    /** Football match clock expired: the score decides, a tie is a draw. */
+    private void endFootballOnTime() {
+        if (roundWinsA == roundWinsB) {
+            endDraw();
+        } else {
+            endMatch(roundWinsA > roundWinsB);
+        }
+    }
+
+    /** A draw ends the match without touching wins, losses or the streak. */
+    private void endDraw() {
+        playerWon = false;
+        drawn = true;
+        phase = PH_MATCH_END;
+        phaseT = 1.3f;
+        resultTitle = "DRAW";
+        resultCoins = 25;
+        resultStreakBonus = 0;
+        resultSub = (isFootball() ? "Goals " : "Rounds ") + roundWinsA + " - " + roundWinsB
+                + "  ·  " + arena.name;
+        profile.addCoins(resultCoins);
+        profile.save();
+        host.vibrate(20);
+        if (profile.voice) {
+            announce("Draw");
+        }
+    }
+
     private void nextRound() {
         if (isFootball()) {
             if (roundWinsA >= 3 || roundWinsB >= 3) {
@@ -1425,8 +1555,14 @@ public final class Game {
             endMatch(roundWinsA > roundWinsB);
             return;
         }
+        if (roundNumber >= MAX_ROUNDS) {
+            // Every round was drawn: the match itself is a draw, not a loop.
+            endDraw();
+            return;
+        }
         roundNumber++;
         roundDraw = false;
+        roundClock = ROUND_SECONDS;
         releaseControls();
         fighters[0].reset(Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET),
                 arena.spawnAy);
@@ -1511,15 +1647,21 @@ public final class Game {
         playerWon = won;
         phase = PH_MATCH_END;
         phaseT = 1.3f;
+        drawn = false;
         if (won) {
             resultTitle = "VICTORY";
             resultCoins = mode == M_SURVIVAL ? 40 : (mode == M_BOSS ? 100 : 70);
             profile.wins++;
             profile.streak++;
             profile.bestStreak = Math.max(profile.bestStreak, profile.streak);
+            // The streak was incremented, saved and shown on the menu but never
+            // paid for. +10 per consecutive win, capped at +50.
+            resultStreakBonus = Math.min(50, Math.max(0, profile.streak - 1) * 10);
+            resultCoins += resultStreakBonus;
         } else {
             resultTitle = "DEFEAT";
             resultCoins = 15;
+            resultStreakBonus = 0;
             profile.losses++;
             profile.streak = 0;
         }
@@ -1545,7 +1687,7 @@ public final class Game {
     private void finishMatch() {
         screen = S_RESULT;
         paused = false;
-        uiBtns.clear();
+        uiBtnCount = 0;
     }
 
     private void updateWorldFx(float dt) {
@@ -1676,13 +1818,17 @@ public final class Game {
         // Keep the last combat framing during a K.O./result. Corpses are free
         // to fall/fade without dragging the camera out of the fighting space.
         if (cameraReady && phase != PH_INTRO && phase != PH_FIGHT) return;
-        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 100f;
-        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 100f;
+        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 70f;
+        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 70f;
         float minY = Math.min(focusY(fighters[0]), focusY(fighters[1])) - Fighter.HEAD - 35f;
         float maxY = Math.max(focusY(fighters[0]), focusY(fighters[1])) + Fighter.FEET + 22f;
         final float top = 105f, bottom = viewH - 180f;
         float fit = Math.min((viewW - 96f) / (maxX - minX), (bottom - top) / (maxY - minY));
-        float targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM, fit));
+        // Never zoom out further than it takes to hold the whole arena on screen:
+        // past that the frame is just empty world beyond the map, which is what
+        // made the old camera look like it was drifting away from the fight.
+        float arenaFit = Math.max(viewW / arena.bounds.width(), viewH / arena.bounds.height());
+        float targetZoom = Math.max(Math.max(ZOOM_MIN, arenaFit * 0.92f), Math.min(ZOOM, fit));
         if (cameraReady && dt > 0f) {
             zoomHold = Math.max(0f, zoomHold - dt);
             if (targetZoom < zoom - 0.07f) {
@@ -1713,13 +1859,39 @@ public final class Game {
                     Math.min(minX - 48f / zoom, camX));
             camY = Math.max(low, Math.min(high, camY));
         }
+        // Panning is bounded by the arena itself: when the view is narrower than
+        // the map the camera stops at the wall instead of sliding off the edge,
+        // and when the view is wider it centres. This is what keeps the frame
+        // full of map instead of full of sky.
+        float viewWorldW = viewW / zoom;
+        float viewWorldH = viewH / zoom;
+        float minCamX = arena.bounds.left;
+        float maxCamX = arena.bounds.right - viewWorldW;
+        camX = maxCamX >= minCamX
+                ? Math.max(minCamX, Math.min(maxCamX, camX))
+                : (arena.bounds.left + arena.bounds.right - viewWorldW) * 0.5f;
+        // Vertically the view may hang below the floor (that band is where the
+        // touch controls live) and rise above the arena, but not by an unbounded
+        // amount: the old clamp pushed the floor down past the controls on a
+        // narrow screen, which is exactly the framing this pass is fixing.
+        float minCamY = arena.bounds.top - 150f;
+        float maxCamY = arena.bounds.bottom + 250f - viewWorldH;
+        camY = Math.max(minCamY, Math.min(camY, Math.max(maxCamY, minCamY)));
         cameraReady = true;
     }
 
     // ------------------------------------------------------------------ draw
 
+    /** One painter for the life of the game: it owns three Paints. */
+    private Painter painter;
+
     public synchronized void draw(Canvas canvas) {
-        Painter g = new Painter(canvas);
+        if (painter == null) {
+            painter = new Painter(canvas);
+        } else {
+            painter.beginFrame(canvas);
+        }
+        Painter g = painter;
         canvas.drawColor(0xFF0B0F17);
 
         if (screen == S_PLAY || screen == S_RESULT) {
@@ -1737,7 +1909,7 @@ public final class Game {
         }
 
         drawMenuBackground(g, screen);
-        uiBtns.clear();
+        uiBtnCount = 0;
         if (screen == S_TITLE) {
             drawTitle(g);
         } else if (screen == S_MAPS) {
@@ -1819,8 +1991,13 @@ public final class Game {
     private void drawBackdrop(Painter g) {
         float baseY = arena.bounds.bottom;
         int deco = arena.deco;
+        // Backdrops used to be built to a fixed 1,400 px assumption: seven hills
+        // stopped at x = 1,490, so on a 2,400-wide arena the right third of the
+        // map had bare sky behind it. They now repeat to the arena's own width.
+        float span = arena.bounds.width() + 240f;
         if (arenaIndex == 1) {
-            for (int i = 0; i < 24; i++) {
+            int count = Math.round(span / 92f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 92f - 60f;
                 float hgt = 130f + ((i * 73) % 210);
                 g.rect(x, baseY - hgt - 40, 66, hgt, Painter.withAlpha(deco, 150));
@@ -1830,7 +2007,8 @@ public final class Game {
                 }
             }
         } else if (arenaIndex == 5) {
-            for (int i = 0; i < 20; i++) {
+            int count = Math.round(span / 105f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 105f - 40f + (i % 3) * 14;
                 g.rect(x, baseY - 360, 15, 360, 0xFF2E5A32);
                 g.rect(x + 3, baseY - 360, 5, 360, 0xFF4E8A46);
@@ -1838,16 +2016,19 @@ public final class Game {
                 g.circle(x + 4, baseY - 372, 26, 0xFF3E7440);
             }
         } else if (arenaIndex == 6) {
-            for (int i = 0; i < 40; i++) {
-                float x = (i * 137f) % 1600;
+            int count = Math.max(40, Math.round(span / 40f));
+            for (int i = 0; i < count; i++) {
+                float x = (i * 137f) % span;
                 float y = 80 + ((i * 91) % 420);
                 g.circle(x, y, 2.2f, 0x88FFFFFF);
             }
         } else {
-            for (int i = 0; i < 7; i++) {
+            int count = Math.round(span / 230f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 230f - 120f;
                 float hgt = 190 + ((i * 53) % 140);
-                Path hill = new Path();
+                Path hill = drawPath;
+                hill.reset();
                 hill.moveTo(x, baseY);
                 hill.lineTo(x + 150, baseY - hgt);
                 hill.lineTo(x + 320, baseY);
@@ -1881,7 +2062,8 @@ public final class Game {
                 g.rect(hr.left, hr.top, hr.width(), hr.height(), 0x44140A20);
                 for (int k = 0; k < 20; k++) {
                     float wx = hr.left + 16 + k * (hr.width() / 20f);
-                    Path spike = new Path();
+                    Path spike = drawPath;
+                    spike.reset();
                     spike.moveTo(wx - 9, hr.top + 26);
                     spike.lineTo(wx, hr.top);
                     spike.lineTo(wx + 9, hr.top + 26);
@@ -1935,6 +2117,14 @@ public final class Game {
         g.reset();
     }
 
+    /** " 3" while loaded, " reload" while the magazine refills, "" for melee. */
+    private String ammoLabel(Fighter f) {
+        if (f.ammo < 0) {
+            return "";
+        }
+        return f.reloadT > 0f ? "  reload" : "  " + f.ammo;
+    }
+
     private void drawPickup(Painter g, Pickup pk) {
         float bob = (float) Math.sin(pk.t * 3f) * 4f;
         g.circle(pk.x, pk.y + bob, 22, Painter.withAlpha(Weapons.color(pk.weapon), 40));
@@ -1949,6 +2139,14 @@ public final class Game {
         g.reset();
         g.size(11);
         g.textCenter(Weapons.name(pk.weapon), pk.x, pk.y + bob - 28, 0xCCFFFFFF);
+        if (inGrabRange(fighters[0], pk)) {
+            g.size(10);
+            g.textCenter("DOWN TO SWAP", pk.x, pk.y + bob + 44, 0xFFFFE38A);
+        }
+    }
+
+    private boolean inGrabRange(Fighter f, Pickup pk) {
+        return !f.dead && Math.abs(f.x - pk.x) < 38f && Math.abs(f.y - pk.y) < 60f;
     }
 
     private void drawControls(Painter g) {
@@ -1983,8 +2181,8 @@ public final class Game {
         g.line.setColor(ready ? 0xFFFFD166 : Painter.withAlpha(color, 150));
         g.line.setStrokeWidth(4f);
         float ring = s.radius + 8f;
-        g.c.drawArc(new RectF(s.baseX - ring, s.baseY - ring,
-                s.baseX + ring, s.baseY + ring), -90f, 360f * charge, false, g.line);
+        drawRect.set(s.baseX - ring, s.baseY - ring, s.baseX + ring, s.baseY + ring);
+        g.c.drawArc(drawRect, -90f, 360f * charge, false, g.line);
         g.size(10f);
         float labelY = s.baseY + s.radius + 25f;
         if (labelY > viewH - 5f) {
@@ -2047,10 +2245,11 @@ public final class Game {
 
         g.size(15);
         g.align(Paint.Align.CENTER);
-        String mid = isFootball() ? "FOOTBALL · FIRST TO 3" : mode == M_SURVIVAL ? "WAVE " + wave
+        String mid = isFootball() ? "FOOTBALL · FIRST TO 3 · " + clockText(matchClock)
+                : mode == M_SURVIVAL ? "WAVE " + wave
                 : (mode == M_BOSS ? "BOSS " + (bossIndex + 1) + " / " + BOSS_NAMES.length
-                : "ROUND " + roundNumber);
-        g.textCenter(mid, viewW / 2, 40, 0xCCFFFFFF);
+                : "ROUND " + roundNumber + " · " + clockText(roundClock));
+        g.textCenter(mid, viewW / 2, 40, clockWarn(matchClock) ? 0xFFFF8A8A : 0xCCFFFFFF);
         if (mode == M_SURVIVAL) {
             g.textCenter("TAKEDOWNS " + (wave - 1), viewW / 2, 62, 0xFFFFE38A);
         } else if (mode == M_BOSS) {
@@ -2060,6 +2259,19 @@ public final class Game {
         }
         g.align(Paint.Align.LEFT);
         c.restore();
+    }
+
+    private String clockText(float secs) {
+        if (isFootball() && secs <= 0f) {
+            return "0:00";
+        }
+        int total = (int) Math.ceil(Math.max(0f, secs));
+        return (total / 60) + ":" + (total % 60 < 10 ? "0" : "") + (total % 60);
+    }
+
+    /** Last ten seconds of a football match turn the clock red. */
+    private boolean clockWarn(float secs) {
+        return isFootball() && secs <= 10f;
     }
 
     private void drawHealth(Painter g, float x, float y, float w, Fighter f, boolean right) {
@@ -2085,11 +2297,11 @@ public final class Game {
         g.size(13);
         if (right) {
             g.align(Paint.Align.RIGHT);
-            g.text(f.name + "  ·  " + Weapons.name(f.weapon)
-                    + (f.ammo >= 0 ? " " + f.ammo : ""), x + w, y + 42, 0xCCFFFFFF);
+            g.text(f.name + "  ·  " + Weapons.name(f.weapon) + ammoLabel(f),
+                    x + w, y + 42, 0xCCFFFFFF);
         } else {
-            g.text(f.name + "  ·  " + Weapons.name(f.weapon)
-                    + (f.ammo >= 0 ? " " + f.ammo : ""), x, y + 42, 0xCCFFFFFF);
+            g.text(f.name + "  ·  " + Weapons.name(f.weapon) + ammoLabel(f),
+                    x, y + 42, 0xCCFFFFFF);
         }
         g.align(Paint.Align.LEFT);
     }
@@ -2133,7 +2345,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.1", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.9", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2193,10 +2405,7 @@ public final class Game {
         g.rrectStroke(x, y, w, h, 12, 2f, Painter.withAlpha(tint, 180));
         g.size(Math.min(22f, h * 0.42f));
         g.textShadowCenter(label, x + w / 2, y + h / 2 + 7, 0xFFFFFFFF, 1.5f);
-        Btn b = new Btn();
-        b.r.set(x, y, x + w, y + h);
-        b.action = action;
-        uiBtns.add(b);
+        addBtn(x, y, w, h, action);
     }
 
     private void header(Painter g, String title) {
@@ -2392,7 +2601,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.2.1 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.9 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -2420,7 +2629,7 @@ public final class Game {
                 "Push up to jump · push down to shield (or crouch when shields are off)",
                 "RELEASE a held stick while its ring is gold to use your weapon skill",
                 "Every weapon has a different skill; its ring refills after each use",
-                "Weapons drop from the sky. Walk over one to grab it",
+                "Weapons drop from the sky — stand on one and push DOWN to swap",
                 "Break an opponent's poise and they go DOWN, then recover on their own",
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins · a double K.O. replays without a point",
@@ -2442,7 +2651,7 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         g.rect(0, 0, viewW, viewH, 0xCC06080F);
-        uiBtns.clear();
+        uiBtnCount = 0;
         float pw = 340;
         float px = (viewW - pw) / 2;
         float py = 90;
@@ -2464,7 +2673,7 @@ public final class Game {
         c.save();
         c.scale(scale, scale);
         g.rect(0, 0, viewW, viewH, 0xB306080F);
-        uiBtns.clear();
+        uiBtnCount = 0;
         float pw = 460;
         float ph = 300;
         float px = (viewW - pw) / 2;
@@ -2477,7 +2686,11 @@ public final class Game {
         g.size(15);
         g.textCenter(resultSub, viewW / 2, py + 108, 0xCCFFFFFF);
         g.size(20);
-        g.textCenter("+" + resultCoins + " coins", viewW / 2, py + 146, 0xFFFFC46B);
+        String coins = "+" + resultCoins + " coins";
+        if (resultStreakBonus > 0) {
+            coins += "  ·  streak +" + resultStreakBonus;
+        }
+        g.textCenter(coins, viewW / 2, py + 146, 0xFFFFC46B);
         g.size(12);
         g.textCenter("Total: " + profile.coins, viewW / 2, py + 166, 0x88FFFFFF);
 
@@ -2488,10 +2701,16 @@ public final class Game {
     }
 
     private void addBtn(float x, float y, float w, float h, int action) {
-        Btn b = new Btn();
+        Btn b;
+        if (uiBtnCount < uiBtns.size()) {
+            b = uiBtns.get(uiBtnCount);
+        } else {
+            b = new Btn();
+            uiBtns.add(b);
+        }
         b.r.set(x, y, x + w, y + h);
         b.action = action;
-        uiBtns.add(b);
+        uiBtnCount++;
     }
 
     /** Drops every held pointer and every queued gameplay action. */
@@ -2577,6 +2796,14 @@ public final class Game {
 
     void debugSeed(long seed) { rnd.setSeed(seed); cpu.seed(seed); }
 
+    void debugSetMatchClock(float seconds) { matchClock = seconds; }
+
+    void debugSetRoundClock(float seconds) { roundClock = seconds; }
+
+    float debugMatchClock() { return matchClock; }
+
+    boolean debugDrawn() { return drawn; }
+
     float[] debugCamera() { return new float[] { camX, camY, zoom }; }
 
     void debugStepRagdolls(float dt) { updateRagdolls(dt); }
@@ -2593,6 +2820,24 @@ public final class Game {
 
     int debugShotCount() {
         return shots.size();
+    }
+
+    /** Places a resting weapon drop, exactly as a real one would sit on a floor. */
+    void debugAddPickup(int weapon, float x, float y) {
+        Pickup pk = new Pickup();
+        pk.weapon = weapon;
+        pk.x = x;
+        pk.y = y;
+        pk.onGround = true;
+        pickups.add(pk);
+    }
+
+    int debugPickupCount() {
+        return pickups.size();
+    }
+
+    int debugPickupWeapon(int index) {
+        return pickups.get(index).weapon;
     }
 
     void debugSetRoundWins(int a, int b) {
@@ -2626,8 +2871,10 @@ public final class Game {
 
     // --------------------------------------------------------------- helpers
 
+    /** Reused by the projectile drawing; callers draw it immediately. */
     private Path triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
-        Path p = new Path();
+        Path p = drawPath;
+        p.reset();
         p.moveTo(x1, y1);
         p.lineTo(x2, y2);
         p.lineTo(x3, y3);
@@ -2636,7 +2883,8 @@ public final class Game {
     }
 
     private Path diamond(float x, float y, float r) {
-        Path p = new Path();
+        Path p = drawPath;
+        p.reset();
         p.moveTo(x, y - r);
         p.lineTo(x + r, y);
         p.lineTo(x, y + r);

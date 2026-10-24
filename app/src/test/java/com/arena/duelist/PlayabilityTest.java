@@ -183,6 +183,249 @@ public class PlayabilityTest {
         }
     }
 
+    @Test public void cpuComesDownFromSideLedgesToFinishTheFight() {
+        // Regression: the CPU used to walk out onto a side ledge, then pace
+        // above the opponent forever because a drop to the floor did not count
+        // as "progress toward the foe". 31 of 120 seeded matches never ended.
+        for (int map : new int[] { 0, 2, 6, 9 }) {
+            for (long seed : new long[] { 7, 42 }) {
+                Game g = boot(0, map);
+                g.debugSeed(seed);
+                g.debugStartFight();
+                Fighter player = g.debugFighter(0);
+                Fighter cpu = g.debugFighter(1);
+                player.reset(Maps.ALL[map].spawnAx, Maps.ALL[map].spawnAy);
+                Maps.Platform ledge = sideLedge(map);
+                cpu.reset(ledge.r.centerX(), ledge.r.top - Fighter.FEET);
+                // Fists force a real descent: a gunner could damage the player
+                // without ever leaving the ledge.
+                cpu.giveWeapon(Weapons.FIST);
+                cpu.abilityT = 100f;
+                player.spawnT = cpu.spawnT = 0f;
+                player.maxHealth = player.health = 10000f;
+                int frames = 0;
+                while (frames < 60 * 12 && player.health == player.maxHealth) {
+                    g.tick(1f / 60f);
+                    frames++;
+                }
+                assertTrue(Maps.ALL[map].name + " CPU never descended from the ledge to engage, seed " + seed,
+                        player.health < player.maxHealth);
+                assertFalse(Maps.ALL[map].name + " CPU fell out of the world, seed " + seed, cpu.dead);
+            }
+        }
+    }
+
+    @Test public void gravityOffJumpReturnsToTheArena() {
+        Game g = boot(1, 0);
+        g.profile.gravity = false;
+        g.debugStartFight();
+        Fighter player = g.debugFighter(0);
+        player.spawnT = 0f;
+        player.onGround = false;
+        player.vy = -850f; // a full jump impulse
+        float startY = player.y;
+        float peak = startY;
+        for (int i = 0; i < 60 * 6; i++) {
+            g.tick(1f / 60f);
+            peak = Math.min(peak, player.y);
+        }
+        assertTrue("a gravity-off jump must not leave the top of the world",
+                peak > Maps.ALL[0].bounds.top);
+        assertTrue("a gravity-off jump must come back down", player.onGround);
+        assertTrue("the fighter must not be stranded above the floor", player.y > startY - 5f);
+    }
+
+    @Test public void lightMeleeKnockbackMovesTheVictim() {
+        // The walk controller used to cancel a fist's 250 px/s knockback in
+        // about 11 px, so the weapon table's shove values were cosmetic.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        Fighter player = g.debugFighter(0);
+        player.spawnT = 0f;
+        float x0 = player.x;
+        player.damage(8f, 250f, -90f, false);
+        for (int i = 0; i < 60; i++) g.tick(1f / 60f);
+        assertTrue("a landed punch should visibly shove the victim",
+                Math.abs(player.x - x0) > 18f);
+    }
+
+    @Test public void seededQuickMatchesReachAResultOnEveryArena() {
+        for (int map : new int[] { 0, 2, 6, 7, 9 }) {
+            for (long seed : new long[] { 7, 42 }) {
+                Game g = boot(0, map);
+                g.debugSeed(seed);
+                int frames = 0;
+                while (frames < 60 * 60 && g.debugScreen() != 6) {
+                    g.tick(1f / 60f);
+                    frames++;
+                }
+                assertEquals("the CPU must resolve the match on " + Maps.ALL[map].name
+                        + " (seed " + seed + ")", 6, g.debugScreen());
+            }
+        }
+    }
+
+    /** Highest side ledge on an arena - the platform that used to trap the CPU. */
+    private Maps.Platform sideLedge(int map) {
+        Maps.Platform best = null;
+        float floor = Maps.ALL[map].platforms.get(0).r.top;
+        for (Maps.Platform p : Maps.ALL[map].platforms) {
+            if (p.r.width() < 140f || p.r.top > floor - 80f) continue;
+            if (best == null || p.r.top < best.r.top) best = p;
+        }
+        assertNotNull("arena must have a side ledge to test", best);
+        return best;
+    }
+
+    /** Holds the shield through the real stick so the Game input path is covered. */
+    @Test public void shieldAbsorbsSixSwordHits() {
+        // At 1.8 shield points per point of damage a sword broke a full shield in
+        // four hits and a bomb in two, so the only defensive move in the game was
+        // a two-second novelty.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.giveWeapon(Weapons.SWORD);
+        int hits = 0;
+        for (int i = 0; i < 60 * 10 && !p.shieldBroken; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+            if (p.shieldOn && p.hurtT <= 0f) {
+                p.damage(17f, 0f, 0f, false);
+                hits++;
+            }
+        }
+        assertEquals("a sword should eat six shield hits, not four", 6, hits);
+        assertTrue("the shield breaks at zero", p.shieldBroken);
+    }
+
+    @Test public void brokenShieldComesBackDuringTheRound() {
+        // A broken shield used to be gone for the rest of the round: the
+        // defensive option existed for the first five seconds and never again.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.shield = 0f;
+        p.shieldBroken = true;
+        p.shieldDelay = Fighter.SHIELD_REGEN_DELAY;
+        int framesToRaise = -1;
+        for (int i = 0; i < 60 * 10; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+            if (p.shieldOn) { framesToRaise = i; break; }
+        }
+        assertTrue("a broken shield must be raisable again within 10 s", framesToRaise > 0);
+        assertTrue("and not instantly", framesToRaise > 60);
+        assertTrue("it comes back at the restore floor or better", p.shield >= p.maxShield * Fighter.SHIELD_RESTORE);
+    }
+
+    @Test public void shieldRechargesOnlyAfterAPause() {
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.shield = 50f;
+        p.shieldDelay = Fighter.SHIELD_REGEN_DELAY;
+        // still inside the delay: no regeneration
+        for (int i = 0; i < 30; i++) {
+            p.input(0f, 1f, 0f, false, false, false);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertEquals("no regeneration during the delay", 50f, p.shield, 0.01f);
+        for (int i = 0; i < 60 * 3; i++) {
+            p.input(0f, 1f, 0f, false, false, false);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertTrue("it regenerates once the delay expires", p.shield > 55f);
+    }
+
+    @Test public void guardBreakStaggersLongerThanAHit() {
+        // hurtT was assigned, not maxed, so the guard-break stun was flattened
+        // back to the ordinary 0.22 s hit-stun the moment it was applied.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        for (int i = 0; i < 30; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        p.shield = 1f;
+        p.damage(17f, 0f, 0f, false);
+        assertTrue("a guard break must cost more than a normal hit",
+                p.hurtT > 0.30f);
+    }
+
+    @Test public void footballCannotRunForever() {
+        // Football had no match clock: goals were the only way to end it and the
+        // ball only moves when someone kicks it, so a defensive local game ran
+        // indefinitely (measured: still running after 300 s).
+        for (int mode : new int[] { 4, 5 }) {
+            Game g = boot(mode, 0);
+            g.debugStartFight();
+            g.debugSetMatchClock(1.5f);
+            for (int i = 0; i < 240 && g.debugScreen() != 6; i++) {
+                g.tick(1f / 60f);
+            }
+            assertEquals("a football match must end when its clock expires (mode " + mode + ")",
+                    6, g.debugScreen());
+        }
+    }
+
+    @Test public void footballClockExpiryWithNoGoalsIsADraw() {
+        Game g = boot(5, 0);
+        g.debugStartFight();
+        g.debugSetMatchClock(1.5f);
+        for (int i = 0; i < 240 && g.debugScreen() != 6; i++) {
+            g.tick(1f / 60f);
+        }
+        assertEquals("0-0 at full time", 0, g.debugRoundWinsA());
+        assertEquals("0-0 at full time", 0, g.debugRoundWinsB());
+        assertTrue("a scoreless match must be recorded as a draw", g.debugDrawn());
+    }
+
+    @Test public void duelRoundClockAwardsTheHealthierFighter() {
+        // Rounds are K.O.-based, but a round where neither can finish the other
+        // used to run forever. Time-out now awards the round on remaining health.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        Fighter a = g.debugFighter(0), b = g.debugFighter(1);
+        a.spawnT = b.spawnT = 0f;
+        b.health = 40f;
+        a.health = 90f;
+        g.debugSetRoundClock(0.2f);
+        for (int i = 0; i < 40; i++) {
+            g.tick(1f / 60f);
+        }
+        assertEquals("the healthier fighter should take a timed-out round", 1, g.debugRoundWinsA());
+        assertEquals("the other fighter gets nothing", 0, g.debugRoundWinsB());
+    }
+
+    @Test public void allDrawnRoundsCapTheMatch() {
+        // A drawn round awards no point and replays. Two evenly matched idle
+        // fighters therefore drew every round forever; MAX_ROUNDS ends it.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        int frames = 0;
+        while (g.debugScreen() != 6 && frames < 60 * 600) {
+            g.tick(1f / 60f);
+            frames++;
+        }
+        assertEquals("the match must eventually reach the result screen", 6, g.debugScreen());
+        assertTrue("an all-draw duel is a drawn match", g.debugDrawn());
+        assertEquals("a draw awards no round", 0, g.debugRoundWinsA() + g.debugRoundWinsB());
+    }
+
     @Test public void repeatedRealRoundsReachResultWithoutDeathLoop() {
         Game g = boot(1, 0);
         for (int round = 1; round <= 2; round++) {

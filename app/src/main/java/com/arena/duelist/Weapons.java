@@ -51,34 +51,65 @@ public final class Weapons {
     public static final int PISTOL = 10;
     public static final int ENERGY_BLADE = 11;
 
+    /**
+     * Attack cadence, in seconds between the starts of two swings.
+     *
+     * The 0.3.1 table fired the light weapons 3.5-4.6 times per second, which
+     * on a phone reads as "everything is too fast": holding the one stick
+     * auto-attacks, so the player machine-guns without ever committing. These
+     * values cap the fastest weapon at ~2.5 swings/s and give slow weapons a
+     * readable wind-up. Balance of damage/reach is unchanged.
+     */
     public static final Def[] DEFS = {
-            new Def("Fists", MELEE, 8f, 36f, 0.28f, 250f, 0xFFE8E8E8, 0, 0, -1, 0,
+            new Def("Fists", MELEE, 8f, 36f, 0.45f, 250f, 0xFFE8E8E8, 0, 0, -1, 0,
                     "Release: rushing power jab."),
-            new Def("Sword", MELEE, 17f, 56f, 0.42f, 360f, 0xFFD8E4FF, 120, 0, -1, 0,
+            new Def("Sword", MELEE, 17f, 56f, 0.58f, 360f, 0xFFD8E4FF, 120, 0, -1, 0,
                     "Release: directional dash slash."),
-            new Def("Spear", MELEE, 14f, 88f, 0.55f, 320f, 0xFFC0E0D0, 320, 0, -1, 0,
+            new Def("Spear", MELEE, 14f, 88f, 0.70f, 320f, 0xFFC0E0D0, 320, 0, -1, 0,
                     "Release: long spear lunge."),
-            new Def("Dual Sabers", MELEE, 11f, 50f, 0.22f, 200f, 0xFFFFD9A0, 520, 0, -1, 0,
+            new Def("Dual Sabers", MELEE, 11f, 50f, 0.40f, 200f, 0xFFFFD9A0, 520, 0, -1, 0,
                     "Release: all-around saber spin."),
-            new Def("Kunai", THROW, 15f, 0f, 0.40f, 280f, 0xFFBFD8FF, 260, 900f, 3, 0,
+            new Def("Kunai", THROW, 15f, 0f, 0.54f, 280f, 0xFFBFD8FF, 260, 900f, 3, 0,
                     "Release: three-blade fan. 3 ammo."),
-            new Def("Hammer", MELEE, 27f, 50f, 0.85f, 760f, 0xFFE0B080, 700, 0, -1, 0,
+            new Def("Hammer", MELEE, 27f, 50f, 1.05f, 760f, 0xFFE0B080, 700, 0, -1, 0,
                     "Release: heavy shockwave."),
-            new Def("Bow", RANGED, 19f, 0f, 0.62f, 300f, 0xFFB8E0A0, 460, 1250f, 4, 0,
+            new Def("Bow", RANGED, 19f, 0f, 0.78f, 300f, 0xFFB8E0A0, 460, 1250f, 4, 0,
                     "Release: triple-arrow volley. 4 ammo."),
-            new Def("Wand", RANGED, 10f, 0f, 0.34f, 180f, 0xFFD9A0FF, 760, 560f, 6, 2,
+            new Def("Wand", RANGED, 10f, 0f, 0.50f, 180f, 0xFFD9A0FF, 760, 560f, 6, 2,
                     "Release: five seeking bolts. 6 ammo."),
-            new Def("Bomb", THROW, 34f, 0f, 1.05f, 820f, 0xFFE86B6B, 880, 720f, 2, 1,
+            new Def("Bomb", THROW, 34f, 0f, 1.25f, 820f, 0xFFE86B6B, 880, 720f, 2, 1,
                     "Release: bomb cluster. 2 ammo."),
-            new Def("Boomerang", THROW, 13f, 0f, 0.95f, 240f, 0xFFFFC46B, 960, 820f, 1, 3,
+            new Def("Boomerang", THROW, 13f, 0f, 1.15f, 240f, 0xFFFFC46B, 960, 820f, 1, 3,
                     "Release: twin returning blades."),
-            new Def("Pistol", RANGED, 9f, 0f, 0.20f, 150f, 0xFFCFCFCF, 1100, 1650f, 8, 0,
+            new Def("Pistol", RANGED, 9f, 0f, 0.36f, 150f, 0xFFCFCFCF, 1100, 1650f, 8, 0,
                     "Release: three-bullet spread. 8 ammo."),
-            new Def("Energy Blade", MELEE, 21f, 66f, 0.36f, 440f, 0xFF7DF9FF, 1500, 0, -1, 0,
+            new Def("Energy Blade", MELEE, 18f, 66f, 0.60f, 440f, 0xFF7DF9FF, 1500, 0, -1, 0,
                     "Release: dash plus plasma wave."),
     };
 
     public static final int COUNT = DEFS.length;
+
+    /**
+     * Seconds an empty magazine needs before it refills.
+     *
+     * Ranged and thrown weapons used to be one-shot-per-round: firing the last
+     * bullet replaced the weapon with bare fists for the rest of the round, so
+     * a 960-coin boomerang bought exactly one throw. A magazine now reloads
+     * instead, which keeps the weapon and gives the ammo count a real rhythm.
+     * Sustained output stays below a melee weapon's, so reloading is not a
+     * straight damage upgrade.
+     */
+    public static float reloadTime(int weapon) {
+        switch (weapon) {
+            case KUNAI: return 2.0f;
+            case BOW: return 2.4f;
+            case WAND: return 2.6f;
+            case BOMB: return 3.0f;
+            case BOOMERANG: return 1.6f;
+            case PISTOL: return 2.2f;
+            default: return 0f;
+        }
+    }
 
     public static String name(int i) {
         if (i < 0 || i >= COUNT) {

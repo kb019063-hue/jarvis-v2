@@ -13,6 +13,13 @@ public final class Fighter {
     private static final float POISE_HOLD = 1.1f;
     /** How fast a hit reaction wears off (per second). */
     private static final float LIMP_RECOVER = 2.2f;
+    /**
+     * Downward acceleration used when the "Gravity" house rule is off. It is
+     * about a quarter of normal gravity: floaty, but jumps still land.
+     */
+    private static final float ZERO_G_GRAVITY = 450f;
+    /** Deceleration (px/s^2) applied to knockback and dash impulses. */
+    private static final float IMPULSE_BRAKE = 1200f;
     public static final float FEET = 30f;
     public static final float HEAD = 30f; // collision/AI clearance, not the drawn head radius
     public static final float CROUCH_HEAD = 18f;
@@ -31,6 +38,29 @@ public final class Fighter {
     public float maxHealth = 100f;
     public float shield = 100f;
     public float maxShield = 100f;
+
+    /**
+     * Shield points lost per point of blocked damage. At 1.8 a sword broke a
+     * full shield in four hits and a bomb in two, which made the one defensive
+     * option in the game a two-second novelty. At 1.0 the shield eats six sword
+     * hits or three bombs: it is something you can hold a lane with.
+     */
+    public static final float SHIELD_PER_DAMAGE = 1.0f;
+    /** Points per second regained once the shield has been left alone. */
+    public static final float SHIELD_REGEN = 22f;
+    /** Seconds without a blocked hit before the shield starts coming back. */
+    public static final float SHIELD_REGEN_DELAY = 2.5f;
+    /**
+     * After a break the shield must climb back to this fraction of its maximum
+     * before it can be raised again. Without the floor the player could re-raise
+     * a one-point shield the instant it came back, and it would shatter on the
+     * next hit instead of reading as a real recovery window.
+     */
+    public static final float SHIELD_RESTORE = 0.35f;
+    /** Counts down after every blocked hit; the shield only recharges at zero. */
+    float shieldDelay;
+    /** True from a guard break until the shield has recharged enough to raise. */
+    public boolean shieldBroken;
 
     public int weapon = Weapons.FIST;
     public int ammo = -1;
@@ -53,6 +83,14 @@ public final class Fighter {
     public float moveX;
     public boolean jumpQueued, attackQueued, shieldHeld, crouch;
     public boolean shieldOn;
+
+    // Drawing scratch: a frame redrew a blade, hair and up to two arcs, and each
+    // of those allocated a fresh Path/RectF/Paint. At 60 Hz that was ~840
+    // objects a second of pure garbage. These are reused instead.
+    private final Path scratchPath = new Path();
+    private final RectF scratchRect = new RectF();
+    private final android.graphics.Paint scratchArc = new android.graphics.Paint(
+            android.graphics.Paint.ANTI_ALIAS_FLAG);
 
     public float hurtT;
     public float flashT;
@@ -105,6 +143,16 @@ public final class Fighter {
     public boolean justDown;
     /** Short grace period after standing up so the fighter is not re-launched. */
     public float iframes;
+    /**
+     * Remaining seconds in which an external velocity (knockback or a
+     * release-skill dash) outranks the walk controller's braking.
+     */
+    public float impulseT;
+    /**
+     * Remaining seconds of an in-progress magazine reload. While this is above
+     * zero the equipped ranged weapon cannot fire, but it is never taken away.
+     */
+    public float reloadT;
     /** Poise: accumulates with hits; at POISE_MAX the fighter goes down. */
     public float poise;
     public float poiseT;
@@ -153,6 +201,12 @@ public final class Fighter {
         ammo = Weapons.DEFS[w].ammo;
         cooldown = 0.15f;
         abilityT = Math.max(abilityT, 0.35f);
+        reloadT = 0f;
+    }
+
+    /** True when a ranged weapon's magazine is empty and cannot fire yet. */
+    public boolean outOfAmmo() {
+        return Weapons.DEFS[weapon].type != Weapons.MELEE && ammo == 0;
     }
 
     public float weaponReach() {
@@ -221,13 +275,23 @@ public final class Fighter {
             return;
         }
         float dmg = amount;
+        // A downed fighter is already on the floor and cannot block, so a
+        // knockdown must not be an automatic kill: halve the damage taken while
+        // the body is still recovering.
+        if (down) {
+            dmg *= 0.5f;
+        }
         if (!ignoreShield && shieldOn && shield > 0) {
-            shield -= dmg * 1.8f;
+            shield -= dmg * SHIELD_PER_DAMAGE;
             dmg *= 0.15f;
+            shieldDelay = SHIELD_REGEN_DELAY;
             if (shield <= 0) {
                 shield = 0;
                 shieldOn = false;
-                stun(0.7f);
+                shieldBroken = true;
+                // A guard break staggers, but it is no longer a death sentence:
+                // at 0.7 s the shield broke and you ate the follow-up for free.
+                stun(0.45f);
             }
         }
         health -= dmg;
@@ -236,7 +300,13 @@ public final class Fighter {
         // the head lags behind the body on impact, opposite to the knockback
         wobX -= kx * 0.010f;
         wobY -= ky * 0.010f;
-        hurtT = 0.22f;
+        // max, not assignment: a guard break stuns for longer and this line used
+        // to flatten that back to the ordinary hit-stun of 0.22 s, so the
+        // intended punisher for a shattered shield never actually happened.
+        hurtT = Math.max(hurtT, 0.22f);
+        // Let the knockback carry for a moment instead of being cancelled by
+        // the movement controller on the very next frame.
+        impulseT = Math.max(impulseT, 0.20f);
         flashT = 0.16f;
 
         // every hit knocks the body out of its pose for a moment
@@ -330,10 +400,16 @@ public final class Fighter {
         Weapons.Def d = Weapons.DEFS[weapon];
         attacking = true;
         firedThisSwing = false;
-        attackDur = Math.max(0.18f, d.cooldown * 0.75f);
+        // A swing must be readable. The old 0.18 s floor made the fastest
+        // weapons land their hit window three frames after the input, which is
+        // why close combat felt instant and unreactable.
+        attackDur = Math.max(0.30f, d.cooldown * 0.75f);
         attackT = attackDur;
         cooldown = d.cooldown;
         hitThisSwing = false;
+        if (swingBoost > 0f) {
+            impulseT = Math.max(impulseT, attackDur);
+        }
 
         // A small, weapon-weighted step makes close combat feel committed instead
         // of like a stationary arm animation. Release skills set swingBoost first
@@ -351,7 +427,7 @@ public final class Fighter {
 
     public boolean meleeActive() {
         return attacking && Weapons.DEFS[weapon].type == Weapons.MELEE
-                && attackT < attackDur * 0.75f && attackT > attackDur * 0.25f;
+                && attackT < attackDur * 0.70f && attackT > attackDur * 0.30f;
     }
 
     /** Current physical weapon tip, used by the melee contact test. */
@@ -384,11 +460,23 @@ public final class Fighter {
         if (abilityT > 0f) {
             abilityT = Math.max(0f, abilityT - dt);
         }
+        if (outOfAmmo()) {
+            if (reloadT <= 0f) {
+                reloadT = Weapons.reloadTime(weapon);
+            }
+            reloadT = Math.max(0f, reloadT - dt);
+            if (reloadT == 0f) {
+                ammo = Weapons.DEFS[weapon].ammo;
+            }
+        }
         if (hurtT > 0) {
             hurtT -= dt;
         }
         if (iframes > 0f) {
             iframes -= dt;
+        }
+        if (impulseT > 0f) {
+            impulseT = Math.max(0f, impulseT - dt);
         }
         if (limp > 0f) {
             limp = Math.max(0f, limp - LIMP_RECOVER * dt);
@@ -434,7 +522,12 @@ public final class Fighter {
             crouch = false;
         }
         boolean canAct = inputAllowed && hurtT <= 0f && spawnT <= 0f;
-        attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking;
+        // Being hit slows you down but must not freeze you completely: the old
+        // rule blocked movement for the whole 0.22s recoil, so a fast weapon
+        // could chain hits and keep a player from ever walking away.
+        boolean canMove = inputAllowed && spawnT <= 0f;
+        attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking
+                && !outOfAmmo();
         if (attackQueued) {
             attackQueued = false;
             startAttack();
@@ -459,13 +552,27 @@ public final class Fighter {
 
         // DEF blocks with any weapon. This used to be melee-only, so the shield
         // silently did nothing while you were holding a gun, bow or wand.
-        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0;
+        // A spent or chipped shield comes back on its own once it has been left
+        // alone for a moment. Without this a shield broken in the first exchange
+        // was gone for the whole round, so the defensive option only existed for
+        // the first five seconds of a ninety-second round.
+        shieldDelay = Math.max(0f, shieldDelay - dt);
+        if (!dead && shield < maxShield && shieldDelay <= 0f) {
+            shield = Math.min(maxShield, shield + SHIELD_REGEN * dt);
+        }
+        if (shieldBroken && shield >= maxShield * SHIELD_RESTORE) {
+            shieldBroken = false;
+        }
+        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0 && !shieldBroken;
         // House rule from the original: with the energy shield switched off, DEF
         // makes the fighter bend down (crouch) instead.
         crouch = !shieldAllowed && shieldHeld && canAct && onGround;
 
         // Horizontal movement
-        float target = canAct ? moveX : 0f;
+        float target = canMove ? moveX : 0f;
+        if (hurtT > 0f) {
+            target *= 0.45f;
+        }
         if (crouch && onGround) {
             target *= 0.25f;
         }
@@ -475,13 +582,23 @@ public final class Fighter {
         if (attacking) {
             target *= 0.45f;
         }
-        float accel = onGround ? 3400f : 1900f;
-        float maxSpeed = 360f;
+        // Trimming the top speed and the ground acceleration takes the
+        // twitchiness out of close combat without touching the jump: platform
+        // reach depends on the jump impulse, not on walking speed.
+        float accel = onGround ? 2700f : 1600f;
+        float maxSpeed = 320f;
         float desired = target * maxSpeed;
+        // A hit's knockback (and a release-skill dash) sets vx directly. Braking
+        // those at the walk acceleration erased a 250 px/s hit in about 11 px,
+        // which made every light weapon feel weightless. While an impulse is
+        // active - and for anything faster than a walk - the controller bleeds
+        // the external velocity slowly instead of stamping it out.
+        boolean impulse = impulseT > 0f || Math.abs(vx) > maxSpeed;
+        float rate = impulse ? IMPULSE_BRAKE : accel;
         if (vx < desired) {
-            vx = Math.min(desired, vx + accel * dt);
+            vx = Math.min(desired, vx + rate * dt);
         } else if (vx > desired) {
-            vx = Math.max(desired, vx - accel * dt);
+            vx = Math.max(desired, vx - rate * dt);
         }
         if (Math.abs(moveX) > 0.25f && Math.abs(vx) > 20f) {
             facing = moveX > 0 ? 1 : -1;
@@ -504,9 +621,13 @@ public final class Fighter {
                 vy = 1500f;
             }
         } else {
-            // Gravity OFF is true zero-G. Keep a little air friction, but do not
-            // continue adding downward acceleration under a misleading toggle.
-            vy *= 0.995f;
+            // Gravity OFF is low-gravity drift, not true zero-G. The one-stick
+            // control scheme has no vertical thrust: with no downward force at
+            // all, a single jump coasted upward forever, carried the fighter out
+            // of the arena and made the match impossible to finish. This keeps
+            // floaty, slow falls while guaranteeing that jumps come back down
+            // and that the 170 px arena ledges stay reachable.
+            vy = vy * 0.95f + ZERO_G_GRAVITY * dt;
             vx *= 0.995f;
         }
 
@@ -518,6 +639,13 @@ public final class Fighter {
         boolean wasGround = onGround;
         onGround = false;
         collide(arena, dt);
+        if (!gravityOn && y - headExtent() < arena.bounds.top) {
+            // Safety net for low-G: nothing may leave the world through the sky.
+            y = arena.bounds.top + headExtent();
+            if (vy < 0f) {
+                vy = 0f;
+            }
+        }
         if (onGround) {
             coyote = 0.1f;
             walkPhase += Math.abs(vx) * dt * 0.035f;
@@ -754,6 +882,8 @@ public final class Fighter {
         vy = 0;
         health = maxHealth;
         shield = maxShield;
+        shieldDelay = 0f;
+        shieldBroken = false;
         dead = false;
         deadT = 0;
         body = null;
@@ -776,6 +906,8 @@ public final class Fighter {
         weaponAngle = facing >= 0 ? 0f : (float) Math.PI;
         prevWeaponPoseValid = false;
         hurtT = 0;
+        impulseT = 0f;
+        reloadT = 0f;
         spawnT = 0.9f;
         flashT = 0;
         onGround = true;
@@ -935,7 +1067,8 @@ public final class Fighter {
         }
         int c = accent;
         if (hair == 1) {
-            Path p = new Path();
+            Path p = scratchPath;
+            p.reset();
             p.moveTo(hx - 8f, hy - 5f);
             p.lineTo(hx - 5f, hy - HEAD_RADIUS - 5f);
             p.lineTo(hx, hy - HEAD_RADIUS - 1f);
@@ -1007,8 +1140,8 @@ public final class Fighter {
                 g.rrect(d.reach - 13f, -7f, 12f, 14f, 2f, c);
                 break;
             case Weapons.BOW:
-                g.c.drawArc(new RectF(-12f, -18f, 13f, 18f), -74f, 148f,
-                        false, arcPaint(c, 2.6f));
+                scratchRect.set(-12f, -18f, 13f, 18f);
+                g.c.drawArc(scratchRect, -74f, 148f, false, arcPaint(c, 2.6f));
                 g.stroke(-5f, 0f, 17f, 0f, 1.4f, fadeColor(0xFFE8E8E8, opacity));
                 break;
             case Weapons.WAND:
@@ -1023,8 +1156,8 @@ public final class Fighter {
                 break;
             case Weapons.BOOMERANG:
                 g.stroke(-5f, 0f, 20f, 0f, 3.2f, fadeColor(0xFF8A6B3A, opacity));
-                g.c.drawArc(new RectF(12f, -13f, 39f, 13f), -62f, 124f,
-                        false, arcPaint(c, 3.2f));
+                scratchRect.set(12f, -13f, 39f, 13f);
+                g.c.drawArc(scratchRect, -62f, 124f, false, arcPaint(c, 3.2f));
                 break;
             case Weapons.PISTOL:
                 g.rrect(-3f, -4f, 24f, 8f, 2f, fadeColor(0xFF4A4A55, opacity));
@@ -1052,7 +1185,8 @@ public final class Fighter {
     private void drawBlade(Painter g, float start, float length, float halfWidth, int color) {
         float end = start + length;
         float shoulder = Math.max(start, end - Math.min(8f, length * 0.22f));
-        Path blade = new Path();
+        Path blade = scratchPath;
+        blade.reset();
         blade.moveTo(start, -halfWidth * 0.55f);
         blade.lineTo(shoulder, -halfWidth);
         blade.lineTo(end, 0f);
@@ -1063,11 +1197,10 @@ public final class Fighter {
     }
 
     private android.graphics.Paint arcPaint(int c, float w) {
-        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        p.setStyle(android.graphics.Paint.Style.STROKE);
-        p.setStrokeWidth(w);
-        p.setColor(c);
-        p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-        return p;
+        scratchArc.setStyle(android.graphics.Paint.Style.STROKE);
+        scratchArc.setStrokeWidth(w);
+        scratchArc.setColor(c);
+        scratchArc.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+        return scratchArc;
     }
 }
