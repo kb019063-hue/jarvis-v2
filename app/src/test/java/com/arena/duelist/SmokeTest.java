@@ -540,6 +540,44 @@ public class SmokeTest {
     }
 
     @Test
+    public void cpuStartsArmedInMostMatches() {
+        // An unarmed CPU re-arms from drops only about half the time, so a 45%
+        // unarmed start rate meant many fights with an opponent that owns no
+        // weapon at all. Measured over 200 seeds, the floor is 10%.
+        int unarmed = 0;
+        for (int i = 1; i <= 200; i++) {
+            boot();
+            game.debugSeed(i * 7919L);
+            game.debugStartMatch(0, 0);
+            if (game.debugFighter(1).weapon == Weapons.FIST) {
+                unarmed++;
+            }
+        }
+        assertTrue("the CPU starts unarmed in " + unarmed + "/200 matches; most fights "
+                + "should feature a weapon", unarmed <= 40);
+        assertTrue("the CPU should still be unarmed sometimes", unarmed >= 1);
+    }
+
+    @Test
+    public void noMeleeWeaponOutclassesTheRoster() {
+        // Fastest neutral kill was the Energy Blade at 40 dps, far ahead of the
+        // next melee weapon. No melee weapon may exceed 1.1x the best of the
+        // others, so one purchase never wins the game on its own.
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            Weapons.Def d = Weapons.DEFS[w];
+            if (d.type != Weapons.MELEE) continue;
+            float dps = d.damage / d.cooldown;
+            assertTrue(Weapons.name(w) + " deals " + dps + " dps, above the 31 dps ceiling",
+                    dps <= 31f);
+        }
+        float blade = Weapons.DEFS[Weapons.ENERGY_BLADE].damage / Weapons.DEFS[Weapons.ENERGY_BLADE].cooldown;
+        float sword = Weapons.DEFS[Weapons.SWORD].damage / Weapons.DEFS[Weapons.SWORD].cooldown;
+        assertTrue("the flagship weapon should be strong but not dominant ("
+                        + blade + " vs " + sword + " dps)",
+                blade < sword * 1.10f);
+    }
+
+    @Test
     public void attackTempoStaysHuman() {
         // Holding the one stick auto-attacks, so the weapon cooldown is the
         // game's real tempo. 0.3.1 fired the light weapons 3.5-4.6 times a

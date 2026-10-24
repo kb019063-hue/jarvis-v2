@@ -83,7 +83,7 @@ public final class Weapons {
                     "Release: twin returning blades."),
             new Def("Pistol", RANGED, 9f, 0f, 0.36f, 150f, 0xFFCFCFCF, 1100, 1650f, 8, 0,
                     "Release: three-bullet spread. 8 ammo."),
-            new Def("Energy Blade", MELEE, 21f, 66f, 0.52f, 440f, 0xFF7DF9FF, 1500, 0, -1, 0,
+            new Def("Energy Blade", MELEE, 18f, 66f, 0.60f, 440f, 0xFF7DF9FF, 1500, 0, -1, 0,
                     "Release: dash plus plasma wave."),
     };
 

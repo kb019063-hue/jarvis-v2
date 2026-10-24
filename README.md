@@ -105,6 +105,23 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
 
+## Weapon balance in 0.3.5
+
+The earlier "the wand is the outlier" conclusion was measured against an idle
+opponent, which flatters homing weapons and punishes melee. Against an
+engaged-but-evasive target the wand is the second *slowest* ranged weapon — and
+the real outlier is the Energy Blade.
+
+- **Energy Blade**: 21 dmg / 0.52 s (40.4 dps, 38 % ahead of every other melee
+  weapon) → 18 dmg / 0.60 s (30.0 dps). Still the strongest melee weapon, just
+  not by a third. 6.1 s → 7.1 s time-to-kill.
+- **The CPU started unarmed in 44 % of matches** (131/300 measured), and an
+  unarmed CPU re-arms from drops only 58 % of the time. Unarmed starts are now
+  10 %, so most fights feature an actual weapon.
+
+A test now enforces a 31 dps ceiling on melee weapons so neither can silently
+regress. Numbers: [docs/IMPLEMENTATION-0.3.5.md](docs/IMPLEMENTATION-0.3.5.md).
+
 ## Weapon handling in 0.3.4
 
 Ranged and thrown weapons deleted themselves: firing the last round replaced
@@ -192,7 +209,7 @@ See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test b
 
 ## Validation
 
-The repository currently contains **68 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **70 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, weapon dps ceiling, CPU arming rate, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -205,7 +222,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 8`, `versionName 0.3.4`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 9`, `versionName 0.3.5`.
 
 ## Structure
 

@@ -2,7 +2,7 @@ import android.content.Context;
 import com.arena.duelist.*;
 import java.lang.reflect.*;
 
-public final class Weapons2 {
+public final class WeaponHandling {
     static int checks=0, fails=0;
     static void check(String n, boolean ok, String d){ checks++; if(!ok) fails++;
         System.out.println((ok?"PASS ":"FAIL ")+n+(d.isEmpty()?"":"  ["+d+"]")); }

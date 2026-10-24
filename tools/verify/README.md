@@ -21,7 +21,17 @@ They are kept here as reproducible evidence, not as part of the app.
 | `Audit.java` | Weapon TTK spread, unlock economy, shield absorption, football, survival ramp |
 | `Audit2.java` | Ammo exhaustion, silent weapon-pickup swap, shield break and regen |
 | `Audit3.java` | Where weapon drops land, football stalemate risk |
+| `Balance.java` | Per-weapon time-to-kill against an idle **and** a moving target, 9 seeds each |
 | `WeaponHandling.java` | Magazine reload vs the old forced-fists downgrade, sustained fire rate, and the deliberate DOWN-to-swap drop rule |
+
+## Toolchain note
+
+`/tmp` is not preserved between sandbox restarts. Rebuild the toolchain into a
+persistent directory (`/home/user/.toolchain`) with `/home/user/build.sh`, which
+compiles the game and then everything in this folder. Compile the harness with
+`-bootclasspath <stubs>:<android.jar>` so the stub `Context` wins over the real
+abstract class, and put `reset()` before `giveWeapon()` in probes because
+`Fighter.reset()` sets the weapon back to fists.
 
 ## How they were run
 

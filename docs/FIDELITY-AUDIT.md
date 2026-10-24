@@ -92,7 +92,9 @@ isolated physics probes). Full write-up: `IMPLEMENTATION-0.3.2.md`.
 | 10 | High | Ranged weapons deleted themselves at empty: a 960-coin boomerang was one throw (0.2 s) | firing the last round set the weapon to Fists permanently | **Fixed** in 0.3.4 (magazines reload) |
 | 11 | High | Walking over a drop replaced your weapon with no input | measured: Sword → Pistol by contact alone | **Fixed** in 0.3.4 (press DOWN) |
 | 12 | Medium | Whole game ran fast: light weapons fired 3.5–4.6 times a second | measured cadence matched the weapon table exactly | **Fixed** in 0.3.3 |
-| 13 | Medium | The wand kills an idle opponent in 3.0 s against a 6–8 s median | 5-bolt skill, 32.5 damage, no counterplay | Open |
+| 13 | Medium | The wand kills an idle opponent in 3.0 s against a 6–8 s median | **wrong metric** — idle targets flatter homing weapons; against a moving target the wand is 11.1 s | Retracted in 0.3.5 |
+| 14 | High | Energy Blade dealt 40.4 dps, 38 % ahead of every other melee weapon | 21 dmg / 0.52 s with near-best reach and best knockback | **Fixed** in 0.3.5 (30.0 dps) |
+| 15 | High | The CPU began 44 % of matches unarmed, and re-armed only 58 % of the time | 131/300 unseeded matches; 17/40 never picked up a weapon in 45 s | **Fixed** in 0.3.5 (10 %) |
 | 9 | Low | No physical-device testing of frame pacing or touch feel | no hardware in the writing environment | Open |
 
 ## How to check this yourself
