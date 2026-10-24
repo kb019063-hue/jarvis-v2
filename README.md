@@ -51,7 +51,7 @@ There are **no separate attack, jump or defend buttons**. Each fighter uses one 
 - Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
 - Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
 - CPU engagement at physical weapon range, ranged fire while repositioning, committed platform routes, hazard retreats and four attack cadences.
-- Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises — every tier is a single 140 px step, so no ledge needs a precision jump.
+- Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises — every tier is a single 120–140 px step, so no ledge needs a precision jump.
 
 ### Football (new in 0.3.0)
 
@@ -124,7 +124,7 @@ the pair instead of the room:
 The zoom floor is the trick: the camera widens until the arena fills the frame
 and then stops, so separation zooms out exactly as far as the map allows. Pan
 is clamped to the arena bounds, and in close combat the camera sits at the 1.45
-ceiling with no fighter ever clipped (0 of 68,000 sampled fighter-frames).
+ceiling with no fighter ever clipped (0 of ~69,000 sampled fighter-frames).
 Backdrops now repeat to each arena's own width instead of stopping at 1,500 px.
 
 Bigger maps also exposed a CPU routing loop that the old three-platform maps

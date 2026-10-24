@@ -43,7 +43,7 @@ all on the outer flanks.
 Design rules the geometry is built on, and checked by `MapAudit`:
 
 - **Every tier is one flight of stairs apart.** `jump()` has `vy = -850`, a
-  170 px apex; every rise between tiers is 140 px, so no tier needs a
+  170 px apex; every rise between tiers is 120–140 px, so no tier needs a
   precision jump. The top ledge always has a mid-ledge beneath it.
 - **The spawn lane is solid and hazard-free** on every map: no hole and no
   hazard between `spawnAx - 40` and `spawnBx + 40` at floor height (0/20 checks
@@ -87,8 +87,8 @@ Measured at 1600 × 720 with the two fighters pinned to opposite arena edges
 | Both fighters on screen | 10/10 | 10/10 | 10/10 |
 | Dead framing (view outside the arena) | — | 8 % | **5–8 %** |
 
-Visible width grew 27–53 % against the old geometry with the *same* camera, and
-68–77 % against what 0.3.8 actually shipped — while the dead-framing figure
+Visible width grew 43–60 % against the old geometry with the *same* camera, and
+28–54 % against what 0.3.8 actually shipped — while the dead-framing figure
 stayed at the old level, because the zoom floor and the pan clamp both stop the
 camera before it walks off the map.
 
@@ -148,7 +148,7 @@ Everything below was run from `tools/verify` against the compiled game classes.
 | `Countdown` | 48/48 (30 spawn-to-hit + 18 melee-weapon contacts) |
 | `Stall` | 0/300 |
 | `Sweep` | 0 stalls, 0 self-deaths |
-| `Zoom` — real matches, 50 per arena-set | zoom 1.45 (in close combat), 0 clipped fighter-frames of 68,000+ |
+| `Zoom` — real matches, 5 seeds per arena | zoom 1.45 (in close combat), 0 clipped fighter-frames of ~69,000 |
 | `Risky` / `Harness` / `TestMirror` | 35 / 15 / 21 checks, 0 failures |
 | `WeaponHandling` / `ShieldTests` / `ClockTests` / `Draw` | 13 / 4 / 7 / 2 checks, 0 failures |
 | `Balance` | fair-TTK spread 4.8×, unchanged (Tier-2 freeze respected) |
