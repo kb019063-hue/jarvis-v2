@@ -1376,6 +1376,11 @@ public final class Game {
         if (!f.dead && f.y > arena.bounds.bottom + 140) {
             f.kill(0);
         }
+        // Drifting above the arena (possible in zero-G) is treated the same way:
+        // the fighter has left the playable space.
+        if (!f.dead && f.y < arena.bounds.top - 150f) {
+            f.kill(0);
+        }
     }
 
     private void onRoundEnd(boolean aDead) {

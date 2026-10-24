@@ -246,10 +246,17 @@ public final class Cpu {
 
         // Dropping to a lower platform needs a committed walk off the edge, not
         // a jump. The airborne controller then steers to the selected landing.
+        // Walk off the platform edge on the foe's side so the CPU drops down to
+        // engage instead of orbiting the ledge above the opponent.
         if (to.top > from.top + 24f) {
             routePlatform = next;
-            routeLandingX = clamp(me.x + dir * 80f, to.left + 24f, to.right - 24f);
-            move = dir;
+            routeLandingX = clamp(foe.x, to.left + 24f, to.right - 24f);
+            float platformCx = (from.left + from.right) * 0.5f;
+            float exitX = foe.x >= platformCx ? (from.right + 40f) : (from.left - 40f);
+            // exitX is clearly off-platform, so move never flips while the CPU
+            // is still standing on the platform; once airborne, followRoute
+            // takes over and steers toward routeLandingX.
+            move = exitX > me.x ? 1f : -1f;
             attack = false;
             shield = false;
             jump = false;
@@ -288,12 +295,18 @@ public final class Cpu {
             }
             RectF to = arena.platforms.get(i).r;
             float centerDelta = to.centerX() - from.centerX();
-            if (Math.abs(centerDelta) > 1f && (centerDelta > 0f ? 1f : -1f) != dir) {
-                continue; // every step must make horizontal progress toward the foe
-            }
             float rise = from.top - to.top;
             if (rise > MAX_ROUTE_RISE) {
-                continue;
+                continue; // target too high to reach
+            }
+            // Dropping to a lower platform doesn't require horizontal progress
+            // toward the foe on the current platform - gravity carries the
+            // fighter down. Enforce direction only for level or upward jumps so
+            // the CPU never jumps away from the opponent.
+            boolean dropping = rise < -24f;
+            if (!dropping && Math.abs(centerDelta) > 1f
+                    && (centerDelta > 0f ? 1f : -1f) != dir) {
+                continue; // every step must make horizontal progress toward the foe
             }
             float gap = horizontalGap(from, to);
             if (gap > MAX_ROUTE_GAP && to.top <= from.top + 40f) {

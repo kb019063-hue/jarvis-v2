@@ -504,10 +504,15 @@ public final class Fighter {
                 vy = 1500f;
             }
         } else {
-            // Gravity OFF is true zero-G. Keep a little air friction, but do not
-            // continue adding downward acceleration under a misleading toggle.
-            vy *= 0.995f;
-            vx *= 0.995f;
+            // Gravity OFF is zero-G: no downward pull while standing, but air
+            // friction kills jump impulses quickly and a soft downward drift
+            // keeps knocked-up fighters from floating out of reach forever
+            // (which would otherwise stall the match).
+            vy *= 0.90f;
+            vx *= 0.90f;
+            if (!onGround) {
+                vy += 900f * dt;
+            }
         }
 
         prevBottom = y + FEET;
