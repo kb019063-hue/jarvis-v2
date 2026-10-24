@@ -117,6 +117,11 @@ public final class Fighter {
      * release-skill dash) outranks the walk controller's braking.
      */
     public float impulseT;
+    /**
+     * Remaining seconds of an in-progress magazine reload. While this is above
+     * zero the equipped ranged weapon cannot fire, but it is never taken away.
+     */
+    public float reloadT;
     /** Poise: accumulates with hits; at POISE_MAX the fighter goes down. */
     public float poise;
     public float poiseT;
@@ -165,6 +170,12 @@ public final class Fighter {
         ammo = Weapons.DEFS[w].ammo;
         cooldown = 0.15f;
         abilityT = Math.max(abilityT, 0.35f);
+        reloadT = 0f;
+    }
+
+    /** True when a ranged weapon's magazine is empty and cannot fire yet. */
+    public boolean outOfAmmo() {
+        return Weapons.DEFS[weapon].type != Weapons.MELEE && ammo == 0;
     }
 
     public float weaponReach() {
@@ -411,6 +422,15 @@ public final class Fighter {
         if (abilityT > 0f) {
             abilityT = Math.max(0f, abilityT - dt);
         }
+        if (outOfAmmo()) {
+            if (reloadT <= 0f) {
+                reloadT = Weapons.reloadTime(weapon);
+            }
+            reloadT = Math.max(0f, reloadT - dt);
+            if (reloadT == 0f) {
+                ammo = Weapons.DEFS[weapon].ammo;
+            }
+        }
         if (hurtT > 0) {
             hurtT -= dt;
         }
@@ -468,7 +488,8 @@ public final class Fighter {
         // rule blocked movement for the whole 0.22s recoil, so a fast weapon
         // could chain hits and keep a player from ever walking away.
         boolean canMove = inputAllowed && spawnT <= 0f;
-        attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking;
+        attackQueued = attackQueued && canAct && cooldown <= 0f && !attacking
+                && !outOfAmmo();
         if (attackQueued) {
             attackQueued = false;
             startAttack();
@@ -835,6 +856,7 @@ public final class Fighter {
         prevWeaponPoseValid = false;
         hurtT = 0;
         impulseT = 0f;
+        reloadT = 0f;
         spawnT = 0.9f;
         flashT = 0;
         onGround = true;

@@ -450,6 +450,96 @@ public class SmokeTest {
     }
 
     @Test
+    public void everyRangedMagazineReloadsInsteadOfBecomingFists() {
+        // 0.3.3 and earlier stripped the weapon when the last round fired, so a
+        // 960-coin boomerang was one throw and then bare fists for the round.
+        for (int w = 0; w < Weapons.COUNT; w++) {
+            if (Weapons.DEFS[w].type == Weapons.MELEE) continue;
+            boot();
+            game.debugStartMatch(1, 0);
+            game.debugStartFight();
+            Fighter p = game.debugFighter(0);
+            p.reset(400, 610);
+            p.spawnT = 0f;
+            p.giveWeapon(w);
+            int guard = 0;
+            while (p.ammo > 0 && guard++ < 1200) {
+                p.input(0f, 1f, 0f, false, true, false);
+                game.tick(1f / 60f);
+            }
+            assertEquals(Weapons.name(w) + " must still be equipped when dry",
+                    w, p.weapon);
+            assertEquals(Weapons.name(w) + " should be empty", 0, p.ammo);
+            float reload = Weapons.reloadTime(w);
+            assertTrue(Weapons.name(w) + " needs a reload time", reload > 0f);
+            int frames = 0;
+            while (p.ammo == 0 && frames++ < 600) {
+                game.tick(1f / 60f);
+            }
+            assertEquals(Weapons.name(w) + " should reload a full magazine",
+                    Weapons.DEFS[w].ammo, p.ammo);
+            assertTrue(Weapons.name(w) + " reloaded in " + frames + " frames, expected about "
+                            + (int) (reload * 60), Math.abs(frames - reload * 60) < 24);
+        }
+    }
+
+    @Test
+    public void emptyMagazineCannotStartASwing() {
+        boot();
+        game.debugStartMatch(1, 0);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        p.reset(400, 610);
+        p.spawnT = 0f;
+        p.giveWeapon(Weapons.BOOMERANG);
+        p.ammo = 0;
+        p.reloadT = Weapons.reloadTime(Weapons.BOOMERANG);
+        for (int i = 0; i < 10; i++) {
+            p.input(0f, 1f, 0f, false, true, false);
+            game.tick(1f / 60f);
+        }
+        assertFalse("an empty weapon must not swing", p.attacking);
+        assertEquals("an empty weapon must not spawn shots", 0, game.debugShotCount());
+    }
+
+    @Test
+    public void weaponDropNeedsADeliberateDownPress() {
+        // Walking over a drop used to replace your weapon with no input at all,
+        // so a bought weapon could silently become a worse one.
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter p = game.debugFighter(0);
+        Fighter cpu = game.debugFighter(1);
+        cpu.cpu = false; // keep the AI from claiming the drop first
+        cpu.reset(120, 590);
+        p.reset(620, 590);
+        p.spawnT = cpu.spawnT = 0f;
+        p.giveWeapon(Weapons.SWORD);
+        float floor = Maps.ALL[0].platforms.get(0).r.top;
+        game.debugAddPickup(Weapons.PISTOL, 620f, floor - 12f);
+        assertEquals("the drop should exist", 1, game.debugPickupCount());
+
+        step(10);
+        assertEquals("walking over a drop must not swap the weapon",
+                Weapons.SWORD, p.weapon);
+        assertEquals("the drop must still be there", 1, game.debugPickupCount());
+
+        // press DOWN: the swap becomes deliberate
+        game.pointerDown(1, 200f, 300f);
+        game.pointerMove(1, 200f, 420f);
+        step(2);
+        assertEquals("pressing DOWN on a drop should swap", Weapons.PISTOL, p.weapon);
+        assertEquals("the old weapon is left on the floor", 1, game.debugPickupCount());
+        assertEquals("the drop on the floor is the old weapon",
+                Weapons.SWORD, game.debugPickupWeapon(0));
+
+        // holding DOWN must not immediately swap back
+        step(60);
+        assertEquals("holding DOWN must not ping-pong the swap", Weapons.PISTOL, p.weapon);
+    }
+
+    @Test
     public void attackTempoStaysHuman() {
         // Holding the one stick auto-attacks, so the weapon cooldown is the
         // game's real tempo. 0.3.1 fired the light weapons 3.5-4.6 times a

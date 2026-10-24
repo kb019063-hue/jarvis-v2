@@ -89,6 +89,28 @@ public final class Weapons {
 
     public static final int COUNT = DEFS.length;
 
+    /**
+     * Seconds an empty magazine needs before it refills.
+     *
+     * Ranged and thrown weapons used to be one-shot-per-round: firing the last
+     * bullet replaced the weapon with bare fists for the rest of the round, so
+     * a 960-coin boomerang bought exactly one throw. A magazine now reloads
+     * instead, which keeps the weapon and gives the ammo count a real rhythm.
+     * Sustained output stays below a melee weapon's, so reloading is not a
+     * straight damage upgrade.
+     */
+    public static float reloadTime(int weapon) {
+        switch (weapon) {
+            case KUNAI: return 2.0f;
+            case BOW: return 2.4f;
+            case WAND: return 2.6f;
+            case BOMB: return 3.0f;
+            case BOOMERANG: return 1.6f;
+            case PISTOL: return 2.2f;
+            default: return 0f;
+        }
+    }
+
     public static String name(int i) {
         if (i < 0 || i >= COUNT) {
             return "Fists";

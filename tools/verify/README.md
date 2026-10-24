@@ -21,7 +21,7 @@ They are kept here as reproducible evidence, not as part of the app.
 | `Audit.java` | Weapon TTK spread, unlock economy, shield absorption, football, survival ramp |
 | `Audit2.java` | Ammo exhaustion, silent weapon-pickup swap, shield break and regen |
 | `Audit3.java` | Where weapon drops land, football stalemate risk |
-| `Ammo.java` | Seconds of held fire each ranged weapon survives before forcing fists |
+| `WeaponHandling.java` | Magazine reload vs the old forced-fists downgrade, sustained fire rate, and the deliberate DOWN-to-swap drop rule |
 
 ## How they were run
 

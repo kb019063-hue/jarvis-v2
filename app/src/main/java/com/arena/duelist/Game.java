@@ -100,6 +100,8 @@ public final class Game {
     private final Random rnd = new Random();
     private final ArrayList<Projectile> shots = new ArrayList<Projectile>();
     private final ArrayList<Pickup> pickups = new ArrayList<Pickup>();
+    /** Previous frame's DOWN input, so a pickup needs a fresh press. */
+    private final boolean[] downPrev = new boolean[2];
     private final ArrayList<Btn> uiBtns = new ArrayList<Btn>();
     private final Cpu cpu = new Cpu();
     private final Football football = new Football();
@@ -572,6 +574,7 @@ public final class Game {
         cpu.reset();
         shots.clear();
         pickups.clear();
+        downPrev[0] = downPrev[1] = false;
         fx.clear();
         roundWinsA = 0;
         roundWinsB = 0;
@@ -873,12 +876,14 @@ public final class Game {
         sfx(SoundFx.THROW);
         host.vibrate(8);
 
+        // Empty magazines reload. They used to strip the weapon and drop the
+        // fighter to bare fists for the rest of the round, which made every
+        // ranged weapon a few seconds of play followed by a downgrade.
         if (f.ammo > 0) {
             f.ammo--;
-            if (f.ammo <= 0) {
-                f.ammo = -1;
-                f.weapon = Weapons.FIST;
-                fx.floatText(f.x, f.y - 60, "OUT OF AMMO", 0x88FFFFFF);
+            if (f.ammo == 0) {
+                f.reloadT = Weapons.reloadTime(f.weapon);
+                fx.floatText(f.x, f.y - 60, "RELOADING", 0x88FFFFFF);
             }
         }
     }
@@ -1290,7 +1295,19 @@ public final class Game {
         }
     }
 
+    /**
+     * A drop is claimed deliberately: a human must press DOWN while standing on
+     * it. Walking over one used to swap the weapon with no input at all, so a
+     * bought weapon could silently become a worse one. The CPU keeps the old
+     * walk-over grab so its behaviour is unchanged.
+     */
     private void updatePickups(float dt) {
+        boolean[] grab = new boolean[2];
+        for (int f = 0; f < 2; f++) {
+            Fighter ft = fighters[f];
+            grab[f] = ft.cpu || (ft.shieldHeld && !downPrev[f]);
+            downPrev[f] = ft.shieldHeld;
+        }
         for (int i = pickups.size() - 1; i >= 0; i--) {
             Pickup pk = pickups.get(i);
             pk.t += dt;
@@ -1310,12 +1327,23 @@ public final class Game {
                 if (ft.dead) {
                     continue;
                 }
-                if (Math.abs(ft.x - pk.x) < 38f && Math.abs(ft.y - pk.y) < 60f) {
+                if (grab[f] && Math.abs(ft.x - pk.x) < 38f && Math.abs(ft.y - pk.y) < 60f) {
+                    int previous = ft.weapon;
                     ft.giveWeapon(pk.weapon);
                     sfx(SoundFx.PICKUP);
                     fx.ring(pk.x, pk.y, Weapons.color(pk.weapon), 18, 0.35f);
                     fx.floatText(pk.x, pk.y - 40f, Weapons.name(pk.weapon), Weapons.color(pk.weapon));
                     pickups.remove(i);
+                    // Leave what you were carrying on the floor, so a swap is
+                    // never a loss and the old weapon can be picked back up.
+                    if (previous != Weapons.FIST && previous != pk.weapon) {
+                        Pickup back = new Pickup();
+                        back.weapon = previous;
+                        back.x = pk.x;
+                        back.y = pk.y - 6f;
+                        back.vy = -140f;
+                        pickups.add(back);
+                    }
                     break;
                 }
             }
@@ -1935,6 +1963,14 @@ public final class Game {
         g.reset();
     }
 
+    /** " 3" while loaded, " reload" while the magazine refills, "" for melee. */
+    private String ammoLabel(Fighter f) {
+        if (f.ammo < 0) {
+            return "";
+        }
+        return f.reloadT > 0f ? "  reload" : "  " + f.ammo;
+    }
+
     private void drawPickup(Painter g, Pickup pk) {
         float bob = (float) Math.sin(pk.t * 3f) * 4f;
         g.circle(pk.x, pk.y + bob, 22, Painter.withAlpha(Weapons.color(pk.weapon), 40));
@@ -1949,6 +1985,14 @@ public final class Game {
         g.reset();
         g.size(11);
         g.textCenter(Weapons.name(pk.weapon), pk.x, pk.y + bob - 28, 0xCCFFFFFF);
+        if (inGrabRange(fighters[0], pk)) {
+            g.size(10);
+            g.textCenter("DOWN TO SWAP", pk.x, pk.y + bob + 44, 0xFFFFE38A);
+        }
+    }
+
+    private boolean inGrabRange(Fighter f, Pickup pk) {
+        return !f.dead && Math.abs(f.x - pk.x) < 38f && Math.abs(f.y - pk.y) < 60f;
     }
 
     private void drawControls(Painter g) {
@@ -2085,11 +2129,11 @@ public final class Game {
         g.size(13);
         if (right) {
             g.align(Paint.Align.RIGHT);
-            g.text(f.name + "  ·  " + Weapons.name(f.weapon)
-                    + (f.ammo >= 0 ? " " + f.ammo : ""), x + w, y + 42, 0xCCFFFFFF);
+            g.text(f.name + "  ·  " + Weapons.name(f.weapon) + ammoLabel(f),
+                    x + w, y + 42, 0xCCFFFFFF);
         } else {
-            g.text(f.name + "  ·  " + Weapons.name(f.weapon)
-                    + (f.ammo >= 0 ? " " + f.ammo : ""), x, y + 42, 0xCCFFFFFF);
+            g.text(f.name + "  ·  " + Weapons.name(f.weapon) + ammoLabel(f),
+                    x, y + 42, 0xCCFFFFFF);
         }
         g.align(Paint.Align.LEFT);
     }
@@ -2133,7 +2177,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.3", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.4", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2392,7 +2436,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.3.3 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.4 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -2420,7 +2464,7 @@ public final class Game {
                 "Push up to jump · push down to shield (or crouch when shields are off)",
                 "RELEASE a held stick while its ring is gold to use your weapon skill",
                 "Every weapon has a different skill; its ring refills after each use",
-                "Weapons drop from the sky. Walk over one to grab it",
+                "Weapons drop from the sky — stand on one and push DOWN to swap",
                 "Break an opponent's poise and they go DOWN, then recover on their own",
                 "Water and lava end you instantly (unless Instant KO is off)",
                 "First to 2 rounds wins · a double K.O. replays without a point",
@@ -2593,6 +2637,24 @@ public final class Game {
 
     int debugShotCount() {
         return shots.size();
+    }
+
+    /** Places a resting weapon drop, exactly as a real one would sit on a floor. */
+    void debugAddPickup(int weapon, float x, float y) {
+        Pickup pk = new Pickup();
+        pk.weapon = weapon;
+        pk.x = x;
+        pk.y = y;
+        pk.onGround = true;
+        pickups.add(pk);
+    }
+
+    int debugPickupCount() {
+        return pickups.size();
+    }
+
+    int debugPickupWeapon(int index) {
+        return pickups.get(index).weapon;
     }
 
     void debugSetRoundWins(int a, int b) {

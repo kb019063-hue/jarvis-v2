@@ -33,8 +33,8 @@ public final class Audit2 {
                 g.pointerMove(1,166f,556f);
                 g.tick(1f/60f); frames++;
             }
-            System.out.printf("ammo: %-8s became %-6s after %.1fs (ammo=%d)%n",
-                Weapons.name(w), Weapons.name(p.weapon), frames/60f, p.ammo);
+            System.out.printf("ammo: %-8s still %-6s after %.1fs of held fire (ammo=%d, reload=%.1fs)%n",
+                Weapons.name(w), Weapons.name(p.weapon), frames/60f, p.ammo, Weapons.reloadTime(w));
         }
 
         // ---- 2. pickup auto-swap: does walking past a drop replace your weapon? ----
@@ -58,7 +58,7 @@ public final class Audit2 {
             p.x=560; // step onto it, no button
             g.tick(1f/60f);
             System.out.println("pickup: after walking onto it (no input) player holds "+Weapons.name(p.weapon)
-                +"  -> silent swap = "+(p.weapon!=Weapons.SWORD));
+                +"  -> silent swap = "+(p.weapon!=Weapons.SWORD)+" (a DOWN press is required now)");
         }
 
         // ---- 3. shield: how much can it absorb, what breaks it ----
