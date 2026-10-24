@@ -73,7 +73,13 @@ sword 47 px, energy blade 66 px, hammer 182 px, bomb 206 px. Dash reach:
 fists 138 px (was 78), sword 238 (was 119), energy blade 280 (was 34),
 spear 325 (was 154).
 
-### 5. Hitstun also stopped you steering (medium)
+### 5. A knockdown was a death sentence (medium)
+
+A downed fighter could not block, could not move, and still took full damage for
+the whole recovery ragdoll (measured: a 20-damage hit removed exactly 20 HP).
+While down, incoming damage is now halved.
+
+### 6. Hitstun also stopped you steering (medium)
 
 `canMove` was false for the whole hurt window, so being hit meant losing all
 control for up to 0.5 s — the "stunlock" feel reported on the phone. Being hit
@@ -91,7 +97,7 @@ sandbox, so the checks were:
   `Game`/`Fighter`/`Cpu` classes: 600 seeded matches, isolated knockback
   measurement, zero-G jump trace, and a mirror of the existing
   playability assertions (35 checks, 0 failures).
-- **Test suite** extended from 58 to 62 methods: gravity OFF is now asserted
+- **Test suite** extended from 58 to 63 methods: gravity OFF is now asserted
   to be *gentle* rather than *absent*; a ledge-descent test, a zero-G
   containment test, a light-knockback test and a seeded end-to-end match test
   were added.

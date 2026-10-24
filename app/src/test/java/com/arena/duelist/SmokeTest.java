@@ -510,6 +510,24 @@ public class SmokeTest {
     }
 
     @Test
+    public void downedFighterTakesHalfDamage() {
+        boot();
+        game.debugStartMatch(0, 0);
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.maxHealth = cpu.health = 100f;
+        // 40 damage with 600 knockback breaks poise outright.
+        cpu.damage(40f, 600f, -120f, false);
+        assertTrue("a heavy hit should knock the fighter down", cpu.down);
+        float before = cpu.health;
+        cpu.hurtT = 0f;
+        cpu.iframes = 0f;
+        cpu.damage(20f, 0f, 0f, true);
+        assertEquals("a downed fighter takes half damage while helpless",
+                10f, before - cpu.health, 0.01f);
+    }
+
+    @Test
     public void downedFighterIgnoresInput() {
         // A ragdoll is deterministic, so the same knockdown must land in exactly
         // the same place whether or not the player mashes the controls.

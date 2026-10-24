@@ -233,6 +233,12 @@ public final class Fighter {
             return;
         }
         float dmg = amount;
+        // A downed fighter is already on the floor and cannot block, so a
+        // knockdown must not be an automatic kill: halve the damage taken while
+        // the body is still recovering.
+        if (down) {
+            dmg *= 0.5f;
+        }
         if (!ignoreShield && shieldOn && shield > 0) {
             shield -= dmg * 1.8f;
             dmg *= 0.15f;
