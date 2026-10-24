@@ -578,6 +578,40 @@ public class SmokeTest {
     }
 
     @Test
+    public void winStreakPaysBonusCoins() {
+        // The streak counter was incremented, saved and displayed on the menu
+        // but never paid anything.
+        boot();
+        game.profile.streak = 3;         // this win becomes the fourth in a row
+        int before = game.profile.coins;
+        game.debugStartMatch(0, 0);
+        game.debugSetRoundWins(1, 0);    // one round already won: this K.O. ends the match
+        game.debugStartFight();
+        Fighter cpu = game.debugFighter(1);
+        cpu.kill(0);
+        for (int i = 0; i < 240; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("a win should be recorded", 4, game.profile.streak);
+        assertEquals("coins = base 70 + streak bonus 30", before + 70 + 30, game.profile.coins);
+    }
+
+    @Test
+    public void winStreakBonusIsCapped() {
+        boot();
+        game.profile.streak = 20;
+        int before = game.profile.coins;
+        game.debugStartMatch(0, 0);
+        game.debugSetRoundWins(1, 0);
+        game.debugStartFight();
+        game.debugFighter(1).kill(0);
+        for (int i = 0; i < 240; i++) {
+            game.tick(1f / 60f);
+        }
+        assertEquals("the streak bonus caps at 50", before + 70 + 50, game.profile.coins);
+    }
+
+    @Test
     public void attackTempoStaysHuman() {
         // Holding the one stick auto-attacks, so the weapon cooldown is the
         // game's real tempo. 0.3.1 fired the light weapons 3.5-4.6 times a

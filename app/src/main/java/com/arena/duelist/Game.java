@@ -128,6 +128,8 @@ public final class Game {
     private String resultTitle = "";
     private String resultSub = "";
     private int resultCoins;
+    /** Extra coins for a win streak; the streak counter used to pay nothing. */
+    private int resultStreakBonus;
     private boolean playerWon;
     private float resultDelay;
     private int confirmBuy = -1;
@@ -148,6 +150,19 @@ public final class Game {
     private float hitStop;
     private float time;
     private float spawnTimer;
+    /** Football has a match clock and duels a round clock; see CHANGELOG 0.3.6. */
+    private static final float FOOTBALL_SECONDS = 120f;
+    private static final float ROUND_SECONDS = 90f;
+    /**
+     * A drawn round awards no point and replays, by design. Without a cap two
+     * evenly matched players who both time out would replay without limit, so
+     * the match itself becomes a draw after this many rounds.
+     */
+    private static final int MAX_ROUNDS = 6;
+    private float matchClock;
+    private float roundClock;
+    /** A drawn match: no win, no loss, no streak change. */
+    private boolean drawn;
 
     // controls
     private final Stick stickA = new Stick();
@@ -579,6 +594,9 @@ public final class Game {
         roundWinsA = 0;
         roundWinsB = 0;
         roundDraw = false;
+        drawn = false;
+        matchClock = FOOTBALL_SECONDS;
+        roundClock = ROUND_SECONDS;
         roundNumber = 1;
         wave = 1;
         bossIndex = 0;
@@ -721,6 +739,15 @@ public final class Game {
             stepFootball(dt);
             return;
         }
+        // Rounds are K.O.-based, so a round clock only matters when neither
+        // fighter can finish the other. Without it a local duel in which both
+        // players simply avoid each other never ended (measured: still running
+        // after 300 s). Time-out awards the round on remaining health.
+        roundClock = Math.max(0f, roundClock - dt);
+        if (roundClock <= 0f) {
+            onRoundTimeout();
+            return;
+        }
         spawnTimer -= dt;
         if (spawnTimer <= 0 && pickups.size() < 3 && mode != M_SURVIVAL) {
             spawnTimer = 5.5f + rnd.nextFloat() * 3f;
@@ -790,6 +817,14 @@ public final class Game {
 
     /** Football has ball contact, not weapon damage, ammo drops or K.O. victories. */
     private void stepFootball(float dt) {
+        // Goals alone could not end a match: the ball only moves when someone
+        // kicks it, so a defensive local game ran forever (measured: still
+        // running after 300 s). A clock bounds the match; the score decides it.
+        matchClock = Math.max(0f, matchClock - dt);
+        if (matchClock <= 0f) {
+            endFootballOnTime();
+            return;
+        }
         applyStick(fighters[0], stickA);
         Fighter b = fighters[1];
         if (isLocal()) {
@@ -1436,6 +1471,58 @@ public final class Game {
         host.vibrate(60);
     }
 
+    /** Round clock expired: the healthier fighter takes the round. */
+    private void onRoundTimeout() {
+        phase = PH_ROUND_END;
+        phaseT = 2.2f;
+        float a = fighters[0].health / Math.max(1f, fighters[0].maxHealth);
+        float b = fighters[1].health / Math.max(1f, fighters[1].maxHealth);
+        roundDraw = Math.abs(a - b) < 0.02f;
+        if (!roundDraw) {
+            if (a > b) {
+                roundWinsA++;
+            } else {
+                roundWinsB++;
+            }
+        }
+        shots.clear();
+        releaseControls();
+        shake = 6f;
+        if (profile.voice) {
+            announce(roundDraw ? "Time up, draw" : "Time up");
+        }
+        sfx(SoundFx.KO);
+        host.vibrate(40);
+    }
+
+    /** Football match clock expired: the score decides, a tie is a draw. */
+    private void endFootballOnTime() {
+        if (roundWinsA == roundWinsB) {
+            endDraw();
+        } else {
+            endMatch(roundWinsA > roundWinsB);
+        }
+    }
+
+    /** A draw ends the match without touching wins, losses or the streak. */
+    private void endDraw() {
+        playerWon = false;
+        drawn = true;
+        phase = PH_MATCH_END;
+        phaseT = 1.3f;
+        resultTitle = "DRAW";
+        resultCoins = 25;
+        resultStreakBonus = 0;
+        resultSub = (isFootball() ? "Goals " : "Rounds ") + roundWinsA + " - " + roundWinsB
+                + "  ·  " + arena.name;
+        profile.addCoins(resultCoins);
+        profile.save();
+        host.vibrate(20);
+        if (profile.voice) {
+            announce("Draw");
+        }
+    }
+
     private void nextRound() {
         if (isFootball()) {
             if (roundWinsA >= 3 || roundWinsB >= 3) {
@@ -1458,8 +1545,14 @@ public final class Game {
             endMatch(roundWinsA > roundWinsB);
             return;
         }
+        if (roundNumber >= MAX_ROUNDS) {
+            // Every round was drawn: the match itself is a draw, not a loop.
+            endDraw();
+            return;
+        }
         roundNumber++;
         roundDraw = false;
+        roundClock = ROUND_SECONDS;
         releaseControls();
         fighters[0].reset(Maps.safeSpawnX(arena, arena.spawnAx, arena.spawnAy + Fighter.FEET),
                 arena.spawnAy);
@@ -1544,15 +1637,21 @@ public final class Game {
         playerWon = won;
         phase = PH_MATCH_END;
         phaseT = 1.3f;
+        drawn = false;
         if (won) {
             resultTitle = "VICTORY";
             resultCoins = mode == M_SURVIVAL ? 40 : (mode == M_BOSS ? 100 : 70);
             profile.wins++;
             profile.streak++;
             profile.bestStreak = Math.max(profile.bestStreak, profile.streak);
+            // The streak was incremented, saved and shown on the menu but never
+            // paid for. +10 per consecutive win, capped at +50.
+            resultStreakBonus = Math.min(50, Math.max(0, profile.streak - 1) * 10);
+            resultCoins += resultStreakBonus;
         } else {
             resultTitle = "DEFEAT";
             resultCoins = 15;
+            resultStreakBonus = 0;
             profile.losses++;
             profile.streak = 0;
         }
@@ -2096,10 +2195,11 @@ public final class Game {
 
         g.size(15);
         g.align(Paint.Align.CENTER);
-        String mid = isFootball() ? "FOOTBALL · FIRST TO 3" : mode == M_SURVIVAL ? "WAVE " + wave
+        String mid = isFootball() ? "FOOTBALL · FIRST TO 3 · " + clockText(matchClock)
+                : mode == M_SURVIVAL ? "WAVE " + wave
                 : (mode == M_BOSS ? "BOSS " + (bossIndex + 1) + " / " + BOSS_NAMES.length
-                : "ROUND " + roundNumber);
-        g.textCenter(mid, viewW / 2, 40, 0xCCFFFFFF);
+                : "ROUND " + roundNumber + " · " + clockText(roundClock));
+        g.textCenter(mid, viewW / 2, 40, clockWarn(matchClock) ? 0xFFFF8A8A : 0xCCFFFFFF);
         if (mode == M_SURVIVAL) {
             g.textCenter("TAKEDOWNS " + (wave - 1), viewW / 2, 62, 0xFFFFE38A);
         } else if (mode == M_BOSS) {
@@ -2109,6 +2209,19 @@ public final class Game {
         }
         g.align(Paint.Align.LEFT);
         c.restore();
+    }
+
+    private String clockText(float secs) {
+        if (isFootball() && secs <= 0f) {
+            return "0:00";
+        }
+        int total = (int) Math.ceil(Math.max(0f, secs));
+        return (total / 60) + ":" + (total % 60 < 10 ? "0" : "") + (total % 60);
+    }
+
+    /** Last ten seconds of a football match turn the clock red. */
+    private boolean clockWarn(float secs) {
+        return isFootball() && secs <= 10f;
     }
 
     private void drawHealth(Painter g, float x, float y, float w, Fighter f, boolean right) {
@@ -2182,7 +2295,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.5", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.6", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2441,7 +2554,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.3.5 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.6 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 
@@ -2526,7 +2639,11 @@ public final class Game {
         g.size(15);
         g.textCenter(resultSub, viewW / 2, py + 108, 0xCCFFFFFF);
         g.size(20);
-        g.textCenter("+" + resultCoins + " coins", viewW / 2, py + 146, 0xFFFFC46B);
+        String coins = "+" + resultCoins + " coins";
+        if (resultStreakBonus > 0) {
+            coins += "  ·  streak +" + resultStreakBonus;
+        }
+        g.textCenter(coins, viewW / 2, py + 146, 0xFFFFC46B);
         g.size(12);
         g.textCenter("Total: " + profile.coins, viewW / 2, py + 166, 0x88FFFFFF);
 
@@ -2625,6 +2742,14 @@ public final class Game {
     }
 
     void debugSeed(long seed) { rnd.setSeed(seed); cpu.seed(seed); }
+
+    void debugSetMatchClock(float seconds) { matchClock = seconds; }
+
+    void debugSetRoundClock(float seconds) { roundClock = seconds; }
+
+    float debugMatchClock() { return matchClock; }
+
+    boolean debugDrawn() { return drawn; }
 
     float[] debugCamera() { return new float[] { camX, camY, zoom }; }
 

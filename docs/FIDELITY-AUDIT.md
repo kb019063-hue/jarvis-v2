@@ -60,7 +60,7 @@ its author in a way that could be read as closer than it is.
   explosives, a homing wand and a returning boomerang.
 - 10 arenas with hazards (lava, spikes, void), instant-KO rules and a football
   mode with its own physics.
-- 62 authored automated tests and real rendered screenshots in CI.
+- 76 authored automated tests and real rendered screenshots in CI.
 
 ## What is missing relative to "an exact game"
 
@@ -95,13 +95,17 @@ isolated physics probes). Full write-up: `IMPLEMENTATION-0.3.2.md`.
 | 13 | Medium | The wand kills an idle opponent in 3.0 s against a 6–8 s median | **wrong metric** — idle targets flatter homing weapons; against a moving target the wand is 11.1 s | Retracted in 0.3.5 |
 | 14 | High | Energy Blade dealt 40.4 dps, 38 % ahead of every other melee weapon | 21 dmg / 0.52 s with near-best reach and best knockback | **Fixed** in 0.3.5 (30.0 dps) |
 | 15 | High | The CPU began 44 % of matches unarmed, and re-armed only 58 % of the time | 131/300 unseeded matches; 17/40 never picked up a weapon in 45 s | **Fixed** in 0.3.5 (10 %) |
+| 16 | Medium | Football had no match clock, so a local match could run forever | 0–0 and still running at 300 s; goals were the only exit | **Fixed** in 0.3.6 (120 s) |
+| 17 | Medium | Duel rounds had no time limit; a round only ends in a K.O. | two idle local players still fighting at 300 s | **Fixed** in 0.3.6 (90 s round clock + round cap) |
+| 18 | Low | The win streak was shown on the menu but never paid | `profile.streak` incremented and saved, no coin effect | **Fixed** in 0.3.6 (+10/win, cap +50) |
+| 19 | — | "109 wins to unlock everything is a grind" | **wrong unit** — matches last 27 s; the roster is ~0.8 h of play | Retracted in 0.3.6 |
 | 9 | Low | No physical-device testing of frame pacing or touch feel | no hardware in the writing environment | Open |
 
 ## How to check this yourself
 
 - Install `docs/screenshots/*.png` are rendered by the test suite each CI run,
   so they reflect the real code.
-- Run `gradle testDebugUnitTest`; the 62 methods exercise combat, CPU
+- Run `gradle testDebugUnitTest`; the 76 methods exercise combat, CPU
   navigation, camera, football, bosses and the input model.
 - The pre-fix numbers in the table above came from `tools/verify/` — a
   headless harness that compiles the game classes and runs real matches with

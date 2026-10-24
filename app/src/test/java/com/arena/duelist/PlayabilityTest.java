@@ -277,6 +277,66 @@ public class PlayabilityTest {
         return best;
     }
 
+    @Test public void footballCannotRunForever() {
+        // Football had no match clock: goals were the only way to end it and the
+        // ball only moves when someone kicks it, so a defensive local game ran
+        // indefinitely (measured: still running after 300 s).
+        for (int mode : new int[] { 4, 5 }) {
+            Game g = boot(mode, 0);
+            g.debugStartFight();
+            g.debugSetMatchClock(1.5f);
+            for (int i = 0; i < 240 && g.debugScreen() != 6; i++) {
+                g.tick(1f / 60f);
+            }
+            assertEquals("a football match must end when its clock expires (mode " + mode + ")",
+                    6, g.debugScreen());
+        }
+    }
+
+    @Test public void footballClockExpiryWithNoGoalsIsADraw() {
+        Game g = boot(5, 0);
+        g.debugStartFight();
+        g.debugSetMatchClock(1.5f);
+        for (int i = 0; i < 240 && g.debugScreen() != 6; i++) {
+            g.tick(1f / 60f);
+        }
+        assertEquals("0-0 at full time", 0, g.debugRoundWinsA());
+        assertEquals("0-0 at full time", 0, g.debugRoundWinsB());
+        assertTrue("a scoreless match must be recorded as a draw", g.debugDrawn());
+    }
+
+    @Test public void duelRoundClockAwardsTheHealthierFighter() {
+        // Rounds are K.O.-based, but a round where neither can finish the other
+        // used to run forever. Time-out now awards the round on remaining health.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        Fighter a = g.debugFighter(0), b = g.debugFighter(1);
+        a.spawnT = b.spawnT = 0f;
+        b.health = 40f;
+        a.health = 90f;
+        g.debugSetRoundClock(0.2f);
+        for (int i = 0; i < 40; i++) {
+            g.tick(1f / 60f);
+        }
+        assertEquals("the healthier fighter should take a timed-out round", 1, g.debugRoundWinsA());
+        assertEquals("the other fighter gets nothing", 0, g.debugRoundWinsB());
+    }
+
+    @Test public void allDrawnRoundsCapTheMatch() {
+        // A drawn round awards no point and replays. Two evenly matched idle
+        // fighters therefore drew every round forever; MAX_ROUNDS ends it.
+        Game g = boot(1, 0);
+        g.debugStartFight();
+        int frames = 0;
+        while (g.debugScreen() != 6 && frames < 60 * 600) {
+            g.tick(1f / 60f);
+            frames++;
+        }
+        assertEquals("the match must eventually reach the result screen", 6, g.debugScreen());
+        assertTrue("an all-draw duel is a drawn match", g.debugDrawn());
+        assertEquals("a draw awards no round", 0, g.debugRoundWinsA() + g.debugRoundWinsB());
+    }
+
     @Test public void repeatedRealRoundsReachResultWithoutDeathLoop() {
         Game g = boot(1, 0);
         for (int round = 1; round <= 2; round++) {

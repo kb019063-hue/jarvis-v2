@@ -98,12 +98,32 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - **Survival:** successive enemies, wave rewards, healing and increasing difficulty. A mutual K.O. is a player defeat, not a free wave.
 - **Boss Tournament:** five custom boss fights with themed names, colors, weapons and rising health; earn a reward for each clean takedown, recover between fights, and win by defeating all five. This is an original implementation, not a reproduction of the original game's boss content.
 
+- **Win streak bonus:** each consecutive win after the first pays +10 coins, capped at +50, shown on the result screen.
+
 ### Meta and accessibility
 
 - Coins, two-tap weapon purchases, persistent starter selection, body colours and hair styles.
 - Gravity, instant-KO hazard and energy-shield house rules.
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
+
+## Matches always end in 0.3.6
+
+Some matches could not finish. Football had no match clock — a goal was the
+only exit — so two passive local players sat at 0–0 indefinitely (measured:
+still running at 300 s). Duel rounds had no time limit either, and a round only
+ends in a K.O., so two evenly matched idle players looped forever.
+
+- **Football:** a 120 s match clock. At 0:00 the score decides, a tie is a draw.
+- **Duel:** a 90 s round clock. The fighter with more remaining health takes the
+  round; within 2 % it is a draw. A `MAX_ROUNDS` cap guarantees termination.
+- **Draws** pay 25 coins and leave wins, losses and streak untouched.
+- The clock is drawn in the HUD and turns red under 10 s.
+
+The road-map item that led here, "the economy is too slow", was **retracted**:
+24 simulated matches give a 27.2 s average match, 70 coins, 9,257 coins/hour,
+and the full 7,580-coin roster in 105 matches (~0.8 hours of play). No reward
+value changed. Numbers: [docs/IMPLEMENTATION-0.3.6.md](docs/IMPLEMENTATION-0.3.6.md).
 
 ## Weapon balance in 0.3.5
 
@@ -183,7 +203,7 @@ content/fidelity boundary is documented in
   punish rather than an automatic kill.
 
 Verified in CI ([run 40100593158](https://github.com/kb019063-hue/jarvis-v2/actions/runs/40100593158)):
-62 tests pass, the APK assembles, and the regenerated screenshots are from the
+76 tests pass, the APK assembles, and the regenerated screenshots are from the
 new build.
 
 ## Playability fixes in 0.3.1
@@ -209,7 +229,7 @@ See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test b
 
 ## Validation
 
-The repository currently contains **70 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, weapon dps ceiling, CPU arming rate, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **76 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, weapon dps ceiling, CPU arming rate, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, match clocks and drawn matches, the win-streak bonus, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -222,7 +242,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 9`, `versionName 0.3.5`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 10`, `versionName 0.3.6`.
 
 ## Structure
 
