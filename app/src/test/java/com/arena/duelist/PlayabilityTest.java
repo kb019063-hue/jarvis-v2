@@ -277,6 +277,95 @@ public class PlayabilityTest {
         return best;
     }
 
+    /** Holds the shield through the real stick so the Game input path is covered. */
+    @Test public void shieldAbsorbsSixSwordHits() {
+        // At 1.8 shield points per point of damage a sword broke a full shield in
+        // four hits and a bomb in two, so the only defensive move in the game was
+        // a two-second novelty.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.giveWeapon(Weapons.SWORD);
+        int hits = 0;
+        for (int i = 0; i < 60 * 10 && !p.shieldBroken; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+            if (p.shieldOn && p.hurtT <= 0f) {
+                p.damage(17f, 0f, 0f, false);
+                hits++;
+            }
+        }
+        assertEquals("a sword should eat six shield hits, not four", 6, hits);
+        assertTrue("the shield breaks at zero", p.shieldBroken);
+    }
+
+    @Test public void brokenShieldComesBackDuringTheRound() {
+        // A broken shield used to be gone for the rest of the round: the
+        // defensive option existed for the first five seconds and never again.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.shield = 0f;
+        p.shieldBroken = true;
+        p.shieldDelay = Fighter.SHIELD_REGEN_DELAY;
+        int framesToRaise = -1;
+        for (int i = 0; i < 60 * 10; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+            if (p.shieldOn) { framesToRaise = i; break; }
+        }
+        assertTrue("a broken shield must be raisable again within 10 s", framesToRaise > 0);
+        assertTrue("and not instantly", framesToRaise > 60);
+        assertTrue("it comes back at the restore floor or better", p.shield >= p.maxShield * Fighter.SHIELD_RESTORE);
+    }
+
+    @Test public void shieldRechargesOnlyAfterAPause() {
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        p.shield = 50f;
+        p.shieldDelay = Fighter.SHIELD_REGEN_DELAY;
+        // still inside the delay: no regeneration
+        for (int i = 0; i < 30; i++) {
+            p.input(0f, 1f, 0f, false, false, false);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertEquals("no regeneration during the delay", 50f, p.shield, 0.01f);
+        for (int i = 0; i < 60 * 3; i++) {
+            p.input(0f, 1f, 0f, false, false, false);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        assertTrue("it regenerates once the delay expires", p.shield > 55f);
+    }
+
+    @Test public void guardBreakStaggersLongerThanAHit() {
+        // hurtT was assigned, not maxed, so the guard-break stun was flattened
+        // back to the ordinary 0.22 s hit-stun the moment it was applied.
+        Game g = boot(0, 0);
+        g.debugStartFight();
+        Fighter p = g.debugFighter(0);
+        p.reset(700, 610);
+        p.spawnT = 0f;
+        p.maxHealth = p.health = 400f;
+        for (int i = 0; i < 30; i++) {
+            p.input(0f, 1f, 0f, false, false, true);
+            p.update(1f / 60f, Maps.ALL[0], true, true);
+        }
+        p.shield = 1f;
+        p.damage(17f, 0f, 0f, false);
+        assertTrue("a guard break must cost more than a normal hit",
+                p.hurtT > 0.30f);
+    }
+
     @Test public void footballCannotRunForever() {
         // Football had no match clock: goals were the only way to end it and the
         // ball only moves when someone kicks it, so a defensive local game ran

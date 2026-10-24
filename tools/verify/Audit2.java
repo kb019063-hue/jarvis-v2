@@ -67,7 +67,7 @@ public final class Audit2 {
             call(g,"debugStartFight",new Class<?>[]{});
             Fighter p=f(g,0); p.spawnT=0f; p.maxHealth=p.health=200f;
             int hits=0; float taken=0f; boolean broke=false; int stunFramesAfter=-1;
-            for(int i=0;i<60;i++){
+            for(int i=0;i<180;i++){
                 p.input(0f,1f,0f,false,false,true);
                 p.update(1f/60f,Maps.ALL[0],true,true,true);
                 if(p.shieldOn && p.hurtT<=0f){
@@ -75,13 +75,12 @@ public final class Audit2 {
                     p.damage(17f,0f,0f,false);
                     taken+=before-p.health; hits++;
                     if(!p.shieldOn && !broke){ broke=true;
-                        // count how long the fighter stays stunned
-                        int fr=0; while(p.hurtT>0f && fr<120){ p.hurtT-=1f/60f; fr++; }
-                        stunFramesAfter=fr; break; }
+                        // damage() now maxes the stun, so read it off directly
+                        stunFramesAfter=Math.round(p.hurtT*60f); break; }
                 }
             }
-            System.out.printf("shield: broke after %d sword hits (17 dmg), only %.1f HP lost, stun ~%.2fs, shield=%.0f%n",
-                hits, taken, stunFramesAfter/60f, p.shield);
+            System.out.printf("shield: broke after %d sword hits (17 dmg, %.1f shield each), only %.1f HP lost, stun ~%.2fs, shield=%.0f%n",
+                hits, 17f*Fighter.SHIELD_PER_DAMAGE, taken, stunFramesAfter/60f, p.shield);
         }
 
         // ---- 4. does shield regen during a round? ----

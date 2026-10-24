@@ -2295,7 +2295,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.6", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.7", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2554,7 +2554,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.3.6 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.7 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 

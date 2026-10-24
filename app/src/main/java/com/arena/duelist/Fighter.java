@@ -39,6 +39,29 @@ public final class Fighter {
     public float shield = 100f;
     public float maxShield = 100f;
 
+    /**
+     * Shield points lost per point of blocked damage. At 1.8 a sword broke a
+     * full shield in four hits and a bomb in two, which made the one defensive
+     * option in the game a two-second novelty. At 1.0 the shield eats six sword
+     * hits or three bombs: it is something you can hold a lane with.
+     */
+    public static final float SHIELD_PER_DAMAGE = 1.0f;
+    /** Points per second regained once the shield has been left alone. */
+    public static final float SHIELD_REGEN = 22f;
+    /** Seconds without a blocked hit before the shield starts coming back. */
+    public static final float SHIELD_REGEN_DELAY = 2.5f;
+    /**
+     * After a break the shield must climb back to this fraction of its maximum
+     * before it can be raised again. Without the floor the player could re-raise
+     * a one-point shield the instant it came back, and it would shatter on the
+     * next hit instead of reading as a real recovery window.
+     */
+    public static final float SHIELD_RESTORE = 0.35f;
+    /** Counts down after every blocked hit; the shield only recharges at zero. */
+    float shieldDelay;
+    /** True from a guard break until the shield has recharged enough to raise. */
+    public boolean shieldBroken;
+
     public int weapon = Weapons.FIST;
     public int ammo = -1;
     public float cooldown;
@@ -251,12 +274,16 @@ public final class Fighter {
             dmg *= 0.5f;
         }
         if (!ignoreShield && shieldOn && shield > 0) {
-            shield -= dmg * 1.8f;
+            shield -= dmg * SHIELD_PER_DAMAGE;
             dmg *= 0.15f;
+            shieldDelay = SHIELD_REGEN_DELAY;
             if (shield <= 0) {
                 shield = 0;
                 shieldOn = false;
-                stun(0.7f);
+                shieldBroken = true;
+                // A guard break staggers, but it is no longer a death sentence:
+                // at 0.7 s the shield broke and you ate the follow-up for free.
+                stun(0.45f);
             }
         }
         health -= dmg;
@@ -265,7 +292,10 @@ public final class Fighter {
         // the head lags behind the body on impact, opposite to the knockback
         wobX -= kx * 0.010f;
         wobY -= ky * 0.010f;
-        hurtT = 0.22f;
+        // max, not assignment: a guard break stuns for longer and this line used
+        // to flatten that back to the ordinary hit-stun of 0.22 s, so the
+        // intended punisher for a shattered shield never actually happened.
+        hurtT = Math.max(hurtT, 0.22f);
         // Let the knockback carry for a moment instead of being cancelled by
         // the movement controller on the very next frame.
         impulseT = Math.max(impulseT, 0.20f);
@@ -514,7 +544,18 @@ public final class Fighter {
 
         // DEF blocks with any weapon. This used to be melee-only, so the shield
         // silently did nothing while you were holding a gun, bow or wand.
-        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0;
+        // A spent or chipped shield comes back on its own once it has been left
+        // alone for a moment. Without this a shield broken in the first exchange
+        // was gone for the whole round, so the defensive option only existed for
+        // the first five seconds of a ninety-second round.
+        shieldDelay = Math.max(0f, shieldDelay - dt);
+        if (!dead && shield < maxShield && shieldDelay <= 0f) {
+            shield = Math.min(maxShield, shield + SHIELD_REGEN * dt);
+        }
+        if (shieldBroken && shield >= maxShield * SHIELD_RESTORE) {
+            shieldBroken = false;
+        }
+        shieldOn = shieldAllowed && shieldHeld && canAct && shield > 0 && !shieldBroken;
         // House rule from the original: with the energy shield switched off, DEF
         // makes the fighter bend down (crouch) instead.
         crouch = !shieldAllowed && shieldHeld && canAct && onGround;
@@ -833,6 +874,8 @@ public final class Fighter {
         vy = 0;
         health = maxHealth;
         shield = maxShield;
+        shieldDelay = 0f;
+        shieldBroken = false;
         dead = false;
         deadT = 0;
         body = null;

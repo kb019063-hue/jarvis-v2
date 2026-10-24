@@ -97,15 +97,31 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - **Local Duel:** two players on one device with the same one-stick control scheme.
 - **Survival:** successive enemies, wave rewards, healing and increasing difficulty. A mutual K.O. is a player defeat, not a free wave.
 - **Boss Tournament:** five custom boss fights with themed names, colors, weapons and rising health; earn a reward for each clean takedown, recover between fights, and win by defeating all five. This is an original implementation, not a reproduction of the original game's boss content.
-
 - **Win streak bonus:** each consecutive win after the first pays +10 coins, capped at +50, shown on the result screen.
 
 ### Meta and accessibility
 
 - Coins, two-tap weapon purchases, persistent starter selection, body colours and hair styles.
-- Gravity, instant-KO hazard and energy-shield house rules.
+- Gravity, instant-KO hazard and energy-shield house rules. With the shield rule on, holding DOWN blocks 85 % of damage; the shield recharges after a short pause and a broken one comes back within a few seconds.
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
+
+## The shield in 0.3.7
+
+Holding DOWN blocks 85 % of incoming damage while the shield lasts, but the
+shield cost 1.8 points per point of damage — a sword shattered it in four hits,
+a bomb in two — and once spent it never came back for the rest of the round.
+
+- **1.0 shield points per point of damage:** a sword takes 6 hits, a bomb 3, a
+  pistol 12. It still shrinks per hit, as in the original.
+- **Recharge:** 22 points per second after 2.5 s without a blocked hit; a
+  broken shield can be raised again at 35 % (measured 4.1 s after the break).
+- **Guard break:** 0.45 s stagger. The old code asked for 0.7 s and then
+  overwrote it with the ordinary 0.22 s hit-stun, so the punish never happened.
+- Blocked hits still deal 15 % chip damage, so a shield cannot stall a match.
+
+Holding the shield against a sword-wielding CPU now survives 9.0 s instead of
+7.4 s. Numbers: [docs/IMPLEMENTATION-0.3.7.md](docs/IMPLEMENTATION-0.3.7.md).
 
 ## Matches always end in 0.3.6
 
@@ -203,7 +219,7 @@ content/fidelity boundary is documented in
   punish rather than an automatic kill.
 
 Verified in CI ([run 40100593158](https://github.com/kb019063-hue/jarvis-v2/actions/runs/40100593158)):
-76 tests pass, the APK assembles, and the regenerated screenshots are from the
+80 tests pass, the APK assembles, and the regenerated screenshots are from the
 new build.
 
 ## Playability fixes in 0.3.1
@@ -229,7 +245,7 @@ See [the playability notes](docs/IMPLEMENTATION-0.3.1.md). This remains a test b
 
 ## Validation
 
-The repository currently contains **76 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, weapon dps ceiling, CPU arming rate, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, match clocks and drawn matches, the win-streak bonus, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
+The repository currently contains **80 authored Robolectric tests across three suites**. Coverage includes CPU damage/engagement on every map, close-range melee and ranged combat, continuous arena floors, non-repeating corpse cleanup, K.O. camera stability, viewport framing, football scoring, kickoff/result flow, CPU/local menu access and independent two-stick input, ball timing and power kicks, projectile event ordering, interruption pause, real touch release, weapon-specific attack wind-up/recovery, swept melee contact, crouch floor alignment, every weapon skill, double-K.O. and Survival outcomes, five-boss tournament progression/rewards and mutual-K.O. handling, purchase persistence, countdown lockout, voice gating, projectile timing, ragdoll timing across frame rates, thin-ledge traversal, weapon dps ceiling, CPU arming rate, magazine reloads, deliberate weapon pickups, attack-tempo and wind-up limits, match clocks and drawn matches, the win-streak bonus, shield durability and recharge, downed-fighter damage reduction, ledge descent to an opponent below, gravity-off containment, light-hit knockback, seeded matches reaching a result, first-map CPU survival/engagement, CPU opening survival in every hazard arena, menu transitions and rendering every arena/weapon combination.
 
 Android CI runs both `assembleDebug` and `testDebugUnitTest`, publishes the rendered screenshots and uploads an installable APK. A green build is not a substitute for physical-device gameplay testing; touch feel, performance and full original-game parity remain separate validation tasks.
 
@@ -242,7 +258,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 10`, `versionName 0.3.6`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 11`, `versionName 0.3.7`.
 
 ## Structure
 
