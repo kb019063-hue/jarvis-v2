@@ -293,45 +293,67 @@ public final class Cpu {
         return true;
     }
 
+    /**
+     * First hop of the shortest platform route to the opponent's platform.
+     *
+     * This used to be a greedy score ("how close is this landing to the centre
+     * of the level / to the opponent"), which dithered: the moment the CPU
+     * crossed the opponent's x, the winning platform flipped, and on the
+     * three-ledge maps it bounced between two routes forever without arriving.
+     * A breadth-first search depends only on the two platforms, so the answer
+     * is stable for as long as the CPU stands on the same one.
+     */
     private int chooseNextPlatform(Fighter me, Fighter foe, Maps.Arena arena,
                                    int current, int foePlatform) {
-        RectF from = arena.platforms.get(current).r;
-        float dir = foe.x >= me.x ? 1f : -1f;
-        int best = -1;
-        float bestScore = Float.MAX_VALUE;
-        for (int i = 0; i < arena.platforms.size(); i++) {
-            if (i == current) {
-                continue;
+        int n = arena.platforms.size();
+        if (current == foePlatform || current < 0 || foePlatform < 0) {
+            return -1;
+        }
+        int[] prev = new int[n];
+        boolean[] seen = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            prev[i] = -1;
+        }
+        int[] queue = new int[n];
+        int head = 0, tail = 0;
+        queue[tail++] = current;
+        seen[current] = true;
+        while (head < tail) {
+            int c = queue[head++];
+            if (c == foePlatform) {
+                break;
             }
-            RectF to = arena.platforms.get(i).r;
-            float centerDelta = to.centerX() - from.centerX();
-            float rise = from.top - to.top;
-            if (rise > MAX_ROUTE_RISE) {
-                continue; // target too high to reach
-            }
-            // Dropping to a lower platform does not need horizontal progress
-            // toward the foe: gravity carries the fighter down, and the floor's
-            // centre is often on the opposite side of the foe. Requiring one
-            // made the CPU refuse to ever come down from a side ledge.
-            boolean dropping = rise < -24f;
-            if (!dropping && Math.abs(centerDelta) > 1f
-                    && (centerDelta > 0f ? 1f : -1f) != dir) {
-                continue; // every level/upward step must make progress toward the foe
-            }
-            float gap = horizontalGap(from, to);
-            if (gap > MAX_ROUTE_GAP && to.top <= from.top + 40f) {
-                continue; // not a credible level/upward jump; look for a route
-            }
-            float score = Math.abs(centerDelta) + Math.abs(to.top - from.top) * 0.45f;
-            if (i == foePlatform) {
-                score -= 80f;
-            }
-            if (score < bestScore) {
-                bestScore = score;
-                best = i;
+            for (int i = 0; i < n; i++) {
+                if (seen[i] || i == c) {
+                    continue;
+                }
+                if (!canStep(arena, c, i)) {
+                    continue;
+                }
+                seen[i] = true;
+                prev[i] = c;
+                queue[tail++] = i;
             }
         }
-        return best;
+        if (!seen[foePlatform]) {
+            return -1;   // no route: let the normal chase take over
+        }
+        int node = foePlatform;
+        while (prev[node] != -1 && prev[node] != current) {
+            node = prev[node];
+        }
+        return prev[node] == current ? node : -1;
+    }
+
+    /** One platform-to-platform hop a fighter can actually perform. */
+    private boolean canStep(Maps.Arena arena, int fromIndex, int toIndex) {
+        RectF from = arena.platforms.get(fromIndex).r;
+        RectF to = arena.platforms.get(toIndex).r;
+        float rise = from.top - to.top;
+        if (rise > MAX_ROUTE_RISE) {
+            return false;   // higher than the jump can reach
+        }
+        return horizontalGap(from, to) <= MAX_ROUTE_GAP;
     }
 
     private void followRoute(Fighter me, Maps.Arena arena) {

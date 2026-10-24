@@ -1818,13 +1818,17 @@ public final class Game {
         // Keep the last combat framing during a K.O./result. Corpses are free
         // to fall/fade without dragging the camera out of the fighting space.
         if (cameraReady && phase != PH_INTRO && phase != PH_FIGHT) return;
-        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 100f;
-        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 100f;
+        float minX = Math.min(focusX(fighters[0]), focusX(fighters[1])) - 70f;
+        float maxX = Math.max(focusX(fighters[0]), focusX(fighters[1])) + 70f;
         float minY = Math.min(focusY(fighters[0]), focusY(fighters[1])) - Fighter.HEAD - 35f;
         float maxY = Math.max(focusY(fighters[0]), focusY(fighters[1])) + Fighter.FEET + 22f;
         final float top = 105f, bottom = viewH - 180f;
         float fit = Math.min((viewW - 96f) / (maxX - minX), (bottom - top) / (maxY - minY));
-        float targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM, fit));
+        // Never zoom out further than it takes to hold the whole arena on screen:
+        // past that the frame is just empty world beyond the map, which is what
+        // made the old camera look like it was drifting away from the fight.
+        float arenaFit = Math.max(viewW / arena.bounds.width(), viewH / arena.bounds.height());
+        float targetZoom = Math.max(Math.max(ZOOM_MIN, arenaFit * 0.92f), Math.min(ZOOM, fit));
         if (cameraReady && dt > 0f) {
             zoomHold = Math.max(0f, zoomHold - dt);
             if (targetZoom < zoom - 0.07f) {
@@ -1855,6 +1859,24 @@ public final class Game {
                     Math.min(minX - 48f / zoom, camX));
             camY = Math.max(low, Math.min(high, camY));
         }
+        // Panning is bounded by the arena itself: when the view is narrower than
+        // the map the camera stops at the wall instead of sliding off the edge,
+        // and when the view is wider it centres. This is what keeps the frame
+        // full of map instead of full of sky.
+        float viewWorldW = viewW / zoom;
+        float viewWorldH = viewH / zoom;
+        float minCamX = arena.bounds.left;
+        float maxCamX = arena.bounds.right - viewWorldW;
+        camX = maxCamX >= minCamX
+                ? Math.max(minCamX, Math.min(maxCamX, camX))
+                : (arena.bounds.left + arena.bounds.right - viewWorldW) * 0.5f;
+        // Vertically the view may hang below the floor (that band is where the
+        // touch controls live) and rise above the arena, but not by an unbounded
+        // amount: the old clamp pushed the floor down past the controls on a
+        // narrow screen, which is exactly the framing this pass is fixing.
+        float minCamY = arena.bounds.top - 150f;
+        float maxCamY = arena.bounds.bottom + 250f - viewWorldH;
+        camY = Math.max(minCamY, Math.min(camY, Math.max(maxCamY, minCamY)));
         cameraReady = true;
     }
 
@@ -1969,8 +1991,13 @@ public final class Game {
     private void drawBackdrop(Painter g) {
         float baseY = arena.bounds.bottom;
         int deco = arena.deco;
+        // Backdrops used to be built to a fixed 1,400 px assumption: seven hills
+        // stopped at x = 1,490, so on a 2,400-wide arena the right third of the
+        // map had bare sky behind it. They now repeat to the arena's own width.
+        float span = arena.bounds.width() + 240f;
         if (arenaIndex == 1) {
-            for (int i = 0; i < 24; i++) {
+            int count = Math.round(span / 92f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 92f - 60f;
                 float hgt = 130f + ((i * 73) % 210);
                 g.rect(x, baseY - hgt - 40, 66, hgt, Painter.withAlpha(deco, 150));
@@ -1980,7 +2007,8 @@ public final class Game {
                 }
             }
         } else if (arenaIndex == 5) {
-            for (int i = 0; i < 20; i++) {
+            int count = Math.round(span / 105f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 105f - 40f + (i % 3) * 14;
                 g.rect(x, baseY - 360, 15, 360, 0xFF2E5A32);
                 g.rect(x + 3, baseY - 360, 5, 360, 0xFF4E8A46);
@@ -1988,13 +2016,15 @@ public final class Game {
                 g.circle(x + 4, baseY - 372, 26, 0xFF3E7440);
             }
         } else if (arenaIndex == 6) {
-            for (int i = 0; i < 40; i++) {
-                float x = (i * 137f) % 1600;
+            int count = Math.max(40, Math.round(span / 40f));
+            for (int i = 0; i < count; i++) {
+                float x = (i * 137f) % span;
                 float y = 80 + ((i * 91) % 420);
                 g.circle(x, y, 2.2f, 0x88FFFFFF);
             }
         } else {
-            for (int i = 0; i < 7; i++) {
+            int count = Math.round(span / 230f);
+            for (int i = 0; i < count; i++) {
                 float x = i * 230f - 120f;
                 float hgt = 190 + ((i * 53) % 140);
                 Path hill = drawPath;
@@ -2315,7 +2345,7 @@ public final class Game {
         g.textShadow("STICK", 46, 108, 0xFFFFFFFF, 3);
         g.textShadow("DUELIST", 46, 108 + Math.min(56f, viewW * 0.06f) + 4f, 0xFFFFC46B, 3);
         g.size(13);
-        g.text("RAGDOLL ARENA  ·  v0.3.8", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
+        g.text("RAGDOLL ARENA  ·  v0.3.9", 48, 108 + Math.min(56f, viewW * 0.06f) * 2f + 12f, 0x88FFFFFF);
 
         // coins pill
         float pillW = 128;
@@ -2571,7 +2601,7 @@ public final class Game {
         g.size(11);
         g.text("Wins " + profile.wins + "  ·  Losses " + profile.losses
                 + "  ·  Best streak " + profile.bestStreak, x, viewH - 32, 0x88FFFFFF);
-        g.text("Stick Duelist v0.3.8 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
+        g.text("Stick Duelist v0.3.9 · built in Arena Agent Mode", x, viewH - 14, 0x66FFFFFF);
         c.restore();
     }
 

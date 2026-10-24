@@ -38,7 +38,7 @@ its author in a way that could be read as closer than it is.
 | Control scheme | One stick: move/aim, release = skill, up = jump, down = shield | Same | **Genuinely faithful** |
 | Ragdoll | Full-body physics ragdoll | 11-point physics ragdoll | Simplified but real |
 | Weapons | ~66, each with a distinct ability | 12, each with one ability | **~18 % of roster** |
-| Arenas | ~46 + map editor | 10, hand-built, no editor | **~22 %, no editor** |
+| Arenas | ~46 + map editor | 10, rebuilt in 0.3.9: 1,900–2,400 px, 3 tiers, 51 platforms; no editor | **~22 %, no editor** |
 | Players | 1–4 local | 1–2 (2nd is CPU or same-device stick) | No party play |
 | Modes | Duel, football, survival, modifiers | Duel (best of 3), football, survival, 5-boss tour | Own designs, not the original's |
 | Modifiers | 8+ battle rules | 3 house rules (gravity, instant KO, shield) | Partial |
@@ -59,7 +59,8 @@ its author in a way that could be read as closer than it is.
 - 12 weapons are mechanically distinct: reach, damage, cadence, thrown arcs,
   explosives, a homing wand and a returning boomerang.
 - 10 arenas with hazards (lava, spikes, void), instant-KO rules and a football
-  mode with its own physics.
+  mode with its own physics. Since 0.3.9 they are 1,900–2,400 px wide with
+  three tiers and a camera that zooms out to keep both fighters framed.
 - 81 authored automated tests and real rendered screenshots in CI.
 
 ## What is missing relative to "an exact game"
@@ -103,6 +104,9 @@ isolated physics probes). Full write-up: `IMPLEMENTATION-0.3.2.md`.
 | 21 | Medium | The guard-break stun never applied: `stun(0.7f)` was overwritten by `hurtT = 0.22f` in the same call | measured hurtT after a break was always 0.22 s | **Fixed** in 0.3.7 (`Math.max`, 0.45 s) |
 | 22 | Medium | The CPU never raises its shield (`shield = false` on every Cpu path) | 0 shield frames in 30 s against an idle player | Open — difficulty pass (aggression is frozen by request) |
 | 23 | Medium | The draw path allocated 15-47 objects every frame | counters in the harness graphics stubs: 13/frame title, 15/frame duel, 47/frame on a spiked map | **Fixed** in 0.3.8 (0.00/frame) |
+| 24 | High | The arenas were too small: 1,300–1,500 px wide, one floor and two ledges at a single height | every map was three platforms in two tiers; both spawns 440 px apart on the middle floor | **Fixed** in 0.3.9 (1,900–2,400 px, 51 platforms, three tiers) |
+| 25 | High | The camera was effectively fixed at its widest: the whole 1,400 px map always fit on screen, so it could never zoom in and gave no sense of space | measured zoom 0.71–0.81 for a whole match; visible width 1,478–1,696 px against a 1,400 px arena | **Fixed** in 0.3.9 (0.46–0.58 at full separation, 1.45 in close combat) |
+| 26 | Medium | CPU platform routing dithered: the greedy next-platform score flipped whenever the CPU crossed the opponent's x, so it paced between two ledges and never arrived | Bamboo Grove seed 4: 7+ s stationary at (201,630) while the player stood at (196,770); 4/300 seeded matches stalled | **Fixed** in 0.3.9 (breadth-first route, 0/300) |
 | 9 | Low | No physical-device testing of frame pacing or touch feel | no hardware in the writing environment | Open |
 
 ## How to check this yourself

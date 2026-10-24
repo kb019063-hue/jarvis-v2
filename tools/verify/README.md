@@ -29,6 +29,10 @@ They are kept here as reproducible evidence, not as part of the app.
 | `ClockTests.java` | Headless mirror of the four clock/streak tests added in 0.3.6 |
 | `Economy.java` | Match length, coins per hour and the unlock curve over 24 simulated matches |
 | `WeaponHandling.java` | Magazine reload vs the old forced-fists downgrade, sustained fire rate, and the deliberate DOWN-to-swap drop rule |
+| `MapAudit.java` | Arena geometry, spawn-lane continuity, a real jump-reachability probe for every upper platform, camera zoom/visible width at the arena edges, and HUD-safe framing at four screen widths |
+| `CpuClimb.java` | For every upper platform in every arena: how long the CPU takes to reach a player parked there (12 s limit) |
+| `Countdown.java` | Headless mirror of the CPU engagement tests: hit landed from the real countdown on every map x 3 seeds, plus every melee weapon against an idle opponent |
+| `Zoom.java` | Camera zoom during real seeded duels, plus how many fighter-frames fall outside the viewport |
 
 ## Toolchain note
 

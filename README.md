@@ -51,7 +51,7 @@ There are **no separate attack, jump or defend buttons**. Each fighter uses one 
 - Directional melee knockback, projectile combat, shields, hit-stop, shake, sparks, dust and damage text.
 - Fixed 60 Hz game simulation, timestep-aware ragdoll integration and second-based projectile lifetimes.
 - CPU engagement at physical weapon range, ranged fire while repositioning, committed platform routes, hazard retreats and four attack cadences.
-- Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises.
+- Thin ledges are one-way platforms; the jump impulse can clear the arenas' 170 px rises — every tier is a single 140 px step, so no ledge needs a precision jump.
 
 ### Football (new in 0.3.0)
 
@@ -87,7 +87,7 @@ Basic ranged attacks consume their displayed ammo. Skills use their own cooldown
 
 ### Arenas (10)
 
-Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night and Chaos Pit. All ten now have an uninterrupted fighting floor between the spawns, with optional side ledges and themed backdrops. Lava/spike hazards are confined to the outer edges of the hazardous arenas, not holes across the central fighting route.
+Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbital Deck, Volcano Rim, Dojo Night and Chaos Pit. Rebuilt in 0.3.9: **1,900–2,400 px wide, 940–1,080 tall, 51 platforms across three tiers**, with a floor that runs under the whole fighting area and lava/spike hazards confined to the outer flanks. Every tier is one 140 px jump from the one below, every upper platform is verified reachable by a real jump probe, and no hazard or hole touches the spawn lane. The camera zooms out to keep both fighters framed when they separate and stops at "whole arena visible".
 
 ### Modes
 
@@ -105,6 +105,35 @@ Rooftop Dusk, Neon Alley, Lava Core, Sky Temple, Frozen Lake, Bamboo Grove, Orbi
 - Gravity, instant-KO hazard and energy-shield house rules. With the shield rule on, holding DOWN blocks 85 % of damage; the shield recharges after a short pause and a broken one comes back within a few seconds.
 - Sound effects and a voice announcer with independent switches; disabling Voice suppresses match and UI speech.
 - Persistent records and settings through `SharedPreferences`.
+
+## Maps and camera in 0.3.9
+
+The ten arenas were 1,300–1,500 px wide with three surfaces and two tiers, and
+the camera could never zoom in because the whole map already fit on screen —
+so every match looked the same and the maps felt cramped. They are now
+1,900–2,400 px wide with **three tiers and 51 platforms**, and the camera frames
+the pair instead of the room:
+
+| At 1600 × 720 | 0.3.8 | 0.3.9 |
+|---|---|---|
+| Zoom, fighters on opposite edges | 0.71–0.81 | **0.46–0.58** |
+| Visible world width | 1,478–1,696 px | **2,065–2,609 px** |
+| Both fighters on screen | 10/10 arenas | 10/10 |
+| Whole arena always visible | yes — always | only when the map fits |
+
+The zoom floor is the trick: the camera widens until the arena fills the frame
+and then stops, so separation zooms out exactly as far as the map allows. Pan
+is clamped to the arena bounds, and in close combat the camera sits at the 1.45
+ceiling with no fighter ever clipped (0 of 68,000 sampled fighter-frames).
+Backdrops now repeat to each arena's own width instead of stopping at 1,500 px.
+
+Bigger maps also exposed a CPU routing loop that the old three-platform maps
+hid: the next-platform chooser flipped its choice whenever the CPU crossed the
+opponent's x, so it paced between two ledges forever. It is now a breadth-first
+search over the platform graph — `Stall` went 4/300 → **0/300** and the
+oscillation jumps (up to 45 a match) went to zero. No aggression, reaction or
+accuracy constant changed. Numbers and the exact scope:
+[docs/IMPLEMENTATION-0.3.9.md](docs/IMPLEMENTATION-0.3.9.md).
 
 ## Draw allocations in 0.3.8
 
@@ -275,7 +304,7 @@ gradle assembleDebug
 gradle testDebugUnitTest
 ```
 
-No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 12`, `versionName 0.3.8`.
+No Gradle wrapper is committed. CI installs Gradle 8.7 and the SDK, then publishes `stick-duelist-<run>.apk`. The application metadata is currently `versionCode 13`, `versionName 0.3.9`.
 
 ## Structure
 

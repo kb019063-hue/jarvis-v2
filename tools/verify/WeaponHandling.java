@@ -29,7 +29,8 @@ public final class WeaponHandling {
         for(int w : new int[]{Weapons.PISTOL, Weapons.BOOMERANG}){
             Game g=boot(1,0,2L);
             call(g,"debugStartFight",new Class<?>[]{});
-            Fighter p=f(g,0); p.reset(400,610); p.spawnT=0f; p.giveWeapon(w);
+            Fighter p=f(g,0);
+            p.reset(400,Maps.ALL[1].platforms.get(0).r.top-Fighter.FEET); p.spawnT=0f; p.giveWeapon(w);
             int total=0;
             while(p.ammo>0 && total<1200){
                 p.input(0f,1f,0f,false,true,false);
@@ -66,7 +67,8 @@ public final class WeaponHandling {
             if(Weapons.DEFS[w].type==Weapons.MELEE) continue;
             Game g=boot(1,0,3L);
             call(g,"debugStartFight",new Class<?>[]{});
-            Fighter p=f(g,0); p.reset(400,610); p.spawnT=0f; p.giveWeapon(w);
+            Fighter p=f(g,0);
+            p.reset(400,Maps.ALL[1].platforms.get(0).r.top-Fighter.FEET); p.spawnT=0f; p.giveWeapon(w);
             boolean was=false; int fired=0;
             for(int i=0;i<60*20;i++){
                 p.input(0f,1f,0f,false,true,false);
@@ -82,8 +84,12 @@ public final class WeaponHandling {
             Game g=boot(0,0,5L);
             call(g,"debugStartFight",new Class<?>[]{});
             Fighter p=f(g,0), c=f(g,1);
-            p.reset(620,590); p.spawnT=0f; p.giveWeapon(Weapons.SWORD);
-            c.reset(120,590); c.spawnT=0f;
+            // Stand on the floor wherever this map actually puts it: the old
+            // hard-coded 590 was written for the 620-top maps and silently
+            // dangled the fighter in mid-air once the arenas got bigger.
+            float floorY=Maps.ALL[0].platforms.get(0).r.top-Fighter.FEET;
+            p.reset(620,floorY); p.spawnT=0f; p.giveWeapon(Weapons.SWORD);
+            c.reset(120,floorY); c.spawnT=0f;
             c.cpu = false;   // isolate the drop mechanic from the AI hoovering it up
             float top=Maps.ALL[0].platforms.get(0).r.top;
             addPk(g, Weapons.PISTOL, 620f, top-12f);
@@ -118,8 +124,9 @@ public final class WeaponHandling {
             Game g=boot(0,0,6L);
             call(g,"debugStartFight",new Class<?>[]{});
             Fighter p=f(g,0), c=f(g,1);
-            p.reset(200,590); p.spawnT=0f;
-            c.reset(620,590); c.spawnT=0f; c.giveWeapon(Weapons.FIST);
+            float floorY=Maps.ALL[0].platforms.get(0).r.top-Fighter.FEET;
+            p.reset(200,floorY); p.spawnT=0f;
+            c.reset(620,floorY); c.spawnT=0f; c.giveWeapon(Weapons.FIST);
             float top=Maps.ALL[0].platforms.get(0).r.top;
             addPk(g, Weapons.HAMMER, 620f, top-12f);
             for(int i=0;i<5;i++) g.tick(1f/60f);
