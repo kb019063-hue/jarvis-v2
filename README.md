@@ -130,6 +130,10 @@ content/fidelity boundary is documented in
 - **Stun locked steering.** Being hit now slows movement to 45 % instead of
   freezing it for the whole hurt window.
 
+Verified in CI ([run 40100593158](https://github.com/kb019063-hue/jarvis-v2/actions/runs/40100593158)):
+62 tests pass, the APK assembles, and the regenerated screenshots are from the
+new build.
+
 ## Playability fixes in 0.3.1
 
 This pass addresses phone reports of passive close-range AI, repeated corpse falls, pumping camera zoom and central pits that made fighting awkward:

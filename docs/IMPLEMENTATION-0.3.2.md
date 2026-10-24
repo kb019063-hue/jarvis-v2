@@ -96,7 +96,10 @@ sandbox, so the checks were:
   containment test, a light-knockback test and a seeded end-to-end match test
   were added.
 
-The Robolectric suite itself was executed by GitHub Actions, not locally.
+The Robolectric suite itself was executed by GitHub Actions, not locally. It
+ran green, including all 62 tests and the screenshot renderer:
+
+https://github.com/kb019063-hue/jarvis-v2/actions/runs/40100593158
 
 ## Still open (not fixed here)
 
